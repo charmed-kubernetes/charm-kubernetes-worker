@@ -1243,6 +1243,13 @@ def cloud_ready():
     set_state('kubernetes-worker.restart-needed')  # force restart
 
 
+@when('kubernetes-worker.cloud.ready',
+      'endpoint.openstack.ready.changed')
+def update_openstack():
+    remove_state('kubernetes-worker.cloud.ready')
+    remove_state('endpoint.openstack.ready.changed')
+
+
 def get_first_mount(mount_relation):
     mount_relation_list = mount_relation.mounts()
     if mount_relation_list and len(mount_relation_list) > 0:
