@@ -5,6 +5,7 @@ set -eux
 CNI_VERSION="${CNI_VERSION:-v0.7.1}"
 ARCH="${ARCH:-amd64 arm64 s390x}"
 
+build_script_commit="$(git show --oneline -q)"
 temp_dir="$(readlink -f build-cni-resources.tmp)"
 rm -rf "$temp_dir"
 mkdir "$temp_dir"
@@ -19,6 +20,7 @@ mkdir "$temp_dir"
 
   for arch in $ARCH; do
     echo "Building cni $CNI_VERSION for $arch"
+    rm -f cni-plugins/bin/*
     docker run \
       --rm \
       -e GOOS=linux \
@@ -28,6 +30,10 @@ mkdir "$temp_dir"
       /bin/bash -c "cd /cni && ./build.sh && chown -R ${USER_ID}:${GROUP_ID} /cni"
 
     (cd cni-plugins/bin
+      echo "cni-$arch $CNI_VERSION" >> BUILD_INFO
+      echo "Built $(date)" >> BUILD_INFO
+      echo "build script commit: $build_script_commit" >> BUILD_INFO
+      echo "cni-plugins commit: $(git show --oneline -q)" >> BUILD_INFO
       tar -caf "$temp_dir/cni-$arch-$CNI_VERSION.tar.gz" .
     )
   done
