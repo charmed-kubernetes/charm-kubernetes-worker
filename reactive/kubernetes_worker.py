@@ -226,22 +226,11 @@ def install_cni_plugins():
 
     hookenv.status_set('maintenance', 'Unpacking cni resource.')
 
-    unpack_path = '{}/files/cni'.format(charm_dir)
+    unpack_path = '/opt/cni/bin'
     os.makedirs(unpack_path, exist_ok=True)
     cmd = ['tar', 'xfvz', archive, '-C', unpack_path]
     hookenv.log(cmd)
     check_call(cmd)
-
-    apps = [
-        {'name': 'loopback', 'path': '/opt/cni/bin'}
-    ]
-
-    for app in apps:
-        unpacked = '{}/{}'.format(unpack_path, app['name'])
-        app_path = os.path.join(app['path'], app['name'])
-        install = ['install', '-v', '-D', unpacked, app_path]
-        hookenv.log(install)
-        check_call(install)
 
     # Used by the "registry" action. The action is run on a single worker, but
     # the registry pod can end up on any worker, so we need this directory on
