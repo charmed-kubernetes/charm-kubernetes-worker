@@ -37,8 +37,6 @@ from charms.reactive import endpoint_from_flag
 from charms.reactive import set_state, remove_state, is_state
 from charms.reactive import when, when_any, when_not, when_none
 
-from charms.kubernetes.common import get_version
-
 from charms.reactive.helpers import data_changed
 from charms.templating.jinja2 import render
 
@@ -63,6 +61,7 @@ from charms.layer.kubernetes_common import write_openstack_snap_config
 from charms.layer.kubernetes_common import write_azure_snap_config
 from charms.layer.kubernetes_common import kubeproxyconfig_path
 from charms.layer.kubernetes_common import configure_kube_proxy
+from charms.layer.kubernetes_common import get_version
 
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
