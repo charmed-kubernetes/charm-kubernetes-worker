@@ -34,9 +34,9 @@ mkdir "$temp_dir"
       echo "Built $(date)" >> BUILD_INFO
       echo "build script commit: $build_script_commit" >> BUILD_INFO
       echo "cni-plugins commit: $(git show --oneline -q)" >> BUILD_INFO
-      tar -caf "$temp_dir/cni-$arch-$CNI_VERSION.tar.gz" .
+      tar -czf "$temp_dir/cni-$arch-$CNI_VERSION.tgz" .
     )
   done
 )
-mv "$temp_dir"/cni-*.tar.gz .
+mv "$temp_dir"/cni-*.tgz .
 rm -rf "$temp_dir"
