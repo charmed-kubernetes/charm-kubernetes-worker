@@ -66,7 +66,7 @@ from charms.layer.kubernetes_common import get_version
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
 # default regex in charmhelpers doesn't allow periods, but nagios itself does.
-nrpe.Check.shortname_re = '[\.A-Za-z0-9-_]+$'
+nrpe.Check.shortname_re = r'[\.A-Za-z0-9-_]+$'
 
 kubeconfig_path = '/root/cdk/kubeconfig'
 gcp_creds_env_key = 'GOOGLE_APPLICATION_CREDENTIALS'
@@ -346,7 +346,7 @@ def deprecated_extra_args():
         # Parse help output into a format we can check easily
         cmd = [service, '-h']
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        sections = re.split('\n\s*--', output.decode('utf-8'))[1:]
+        sections = re.split(r'\n\s*--', output.decode('utf-8'))[1:]
         partitioned_sections = [section.partition(' ') for section in sections]
         arg_help = {part[0]: part[2] for part in partitioned_sections}
 
