@@ -101,7 +101,7 @@ def upgrade_charm():
 
     # Remove the RC for nginx ingress if it exists
     if hookenv.config().get('ingress'):
-        kubectl_success('delete', 'rc', 'nginx-ingress-controller')
+        set_state('kubernetes-worker.remove-old-ingress')
 
     # Remove gpu.enabled state so we can reconfigure gpu-related kubelet flags,
     # since they can differ between k8s versions
@@ -119,6 +119,35 @@ def upgrade_charm():
     remove_state('kubernetes-worker.ingress.available')
     remove_state('worker.auth.bootstrapped')
     set_state('kubernetes-worker.restart-needed')
+
+
+@when('kubernetes-worker.remove-old-ingress')
+def remove_old_ingress():
+    try:
+        kubectl('delete', 'rc', 'nginx-ingress-controller',
+                '--ignore-not-found')
+
+        # these moved into a different namespace for 1.12
+        kubectl('delete', 'rc', 'default-http-backend',
+                '--ignore-not-found')
+        kubectl('delete', 'svc', 'default-http-backend',
+                '--ignore-not-found')
+        kubectl('delete', 'ds', 'nginx-ingress-{}-controller'.format(
+                    hookenv.service_name()), '--ignore-not-found')
+        kubectl('delete', 'serviceaccount',
+                'nginx-ingress-{}-serviceaccount'.format(
+                    hookenv.service_name()), '--ignore-not-found')
+        kubectl('delete', 'clusterrolebinding',
+                'nginx-ingress-clusterrole-nisa-{}-binding'.format(
+                    hookenv.service_name()), '--ignore-not-found')
+        kubectl('delete', 'configmap',
+                'nginx-load-balancer-{}-conf'.format(
+                    hookenv.service_name()), '--ignore-not-found')
+    except CalledProcessError:
+        # try again next time
+        return
+
+    remove_state('kubernetes-worker.remove-old-ingress')
 
 
 def set_upgrade_needed():
@@ -784,6 +813,7 @@ def launch_default_ingress_controller():
     context = {}
     context['arch'] = arch()
     addon_path = '/root/cdk/addons/{}'
+    context['juju_application'] = hookenv.service_name()
 
     context['defaultbackend_image'] = config.get('default-backend-image')
     if (context['defaultbackend_image'] == "" or
@@ -798,35 +828,21 @@ def launch_default_ingress_controller():
             context['defaultbackend_image'] = \
                 "k8s.gcr.io/defaultbackend-amd64:1.5"
 
-    # Render the default http backend (404) replicationcontroller manifest
-    manifest = addon_path.format('default-http-backend.yaml')
-    render('default-http-backend.yaml', manifest, context)
-    hookenv.log('Creating the default http backend.')
-    try:
-        kubectl('apply', '-f', manifest)
-    except CalledProcessError as e:
-        hookenv.log(e)
-        hookenv.log('Failed to create default-http-backend. Will attempt again next update.')  # noqa
-        hookenv.close_port(80)
-        hookenv.close_port(443)
-        return
-
     # Render the ingress daemon set controller manifest
     context['ssl_chain_completion'] = config.get(
         'ingress-ssl-chain-completion')
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.16.1',  # noqa
-                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.16.1',  # noqa
-                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.16.1',  # noqa
-                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.16.1',  # noqa
+        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0',  # noqa
+                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.19.0',  # noqa
+                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.19.0',  # noqa
+                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.19.0',  # noqa
                   }
         context['ingress_image'] = images.get(context['arch'], images['amd64'])
     if get_version('kubelet') < (1, 9):
         context['daemonset_api_version'] = 'extensions/v1beta1'
     else:
         context['daemonset_api_version'] = 'apps/v1beta2'
-    context['juju_application'] = hookenv.service_name()
     manifest = addon_path.format('ingress-daemon-set.yaml')
     render('ingress-daemon-set.yaml', manifest, context)
     hookenv.log('Creating the ingress daemon set.')
@@ -835,6 +851,20 @@ def launch_default_ingress_controller():
     except CalledProcessError as e:
         hookenv.log(e)
         hookenv.log('Failed to create ingress controller. Will attempt again next update.')  # noqa
+        hookenv.close_port(80)
+        hookenv.close_port(443)
+        return
+
+    # Render the default http backend (404) replicationcontroller manifest
+    # needs to happen after ingress-daemon-set since that sets up the namespace
+    manifest = addon_path.format('default-http-backend.yaml')
+    render('default-http-backend.yaml', manifest, context)
+    hookenv.log('Creating the default http backend.')
+    try:
+        kubectl('apply', '-f', manifest)
+    except CalledProcessError as e:
+        hookenv.log(e)
+        hookenv.log('Failed to create default-http-backend. Will attempt again next update.')  # noqa
         hookenv.close_port(80)
         hookenv.close_port(443)
         return

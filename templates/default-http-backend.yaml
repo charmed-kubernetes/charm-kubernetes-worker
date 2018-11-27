@@ -1,19 +1,27 @@
-apiVersion: v1
-kind: ReplicationController
+apiVersion: extensions/v1beta1
+kind: Deployment
 metadata:
-  name: default-http-backend
+  name: default-http-backend-{{ juju_application }}
+  labels:
+    app.kubernetes.io/name: default-http-backend-{{ juju_application }}
+    app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
+    cdk-{{ juju_application }}-ingress: "true"
+  namespace: ingress-nginx-{{ juju_application }}
 spec:
   replicas: 1
   selector:
-    app: default-http-backend
+    matchLabels:
+      app.kubernetes.io/name: default-http-backend-{{ juju_application }}
+      app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
   template:
     metadata:
       labels:
-        app: default-http-backend
+        app.kubernetes.io/name: default-http-backend-{{ juju_application }}
+        app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     spec:
       terminationGracePeriodSeconds: 60
       containers:
-      - name: default-http-backend
+      - name: default-http-backend-{{ juju_application }}
         # Any image is permissible as long as:
         # 1. It serves a 404 page at /
         # 2. It serves 200 on a /healthz endpoint
@@ -26,19 +34,28 @@ spec:
           initialDelaySeconds: 30
           timeoutSeconds: 5
         ports:
-        - containerPort: 8080
+          - containerPort: 8080
+        resources:
+          limits:
+            cpu: 10m
+            memory: 20Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: default-http-backend
-#  namespace: kube-system
+  name: default-http-backend-{{ juju_application }}
+  namespace: ingress-nginx-{{ juju_application }}
   labels:
-    k8s-app: default-http-backend
+    app.kubernetes.io/name: default-http-backend-{{ juju_application }}
+    app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
+    cdk-{{ juju_application }}-ingress: "true"
 spec:
   ports:
   - port: 80
-    protocol: TCP
-    targetPort: 80
+    targetPort: 8080
   selector:
-    app: default-http-backend
+    app.kubernetes.io/name: default-http-backend-{{ juju_application }}
+    app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
