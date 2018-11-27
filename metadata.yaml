@@ -42,6 +42,8 @@ requires:
     interface: azure-integration
   nfs:
     interface: mount
+  docker-registry:
+    interface: docker-registry
 provides:
   cni:
     interface: kubernetes-cni

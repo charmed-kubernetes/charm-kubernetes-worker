@@ -19,7 +19,6 @@ juju deploy canonical-kubernetes
 For more information about [Canonical Kubernetes](https://jujucharms.com/canonical-kubernetes)
 consult the bundle `README.md` file.
 
-
 ## Scale out
 
 To add additional compute capacity to your Kubernetes workers, you may
@@ -63,36 +62,42 @@ For more information on the possible values for `snapd_refresh`, see the
 
 The kubernetes-worker charm supports the following Operational Actions:
 
-#### Pause
+### Pause
 
 Pausing the workload enables administrators to both [drain](http://kubernetes.io/docs/user-guide/kubectl/kubectl_drain/) and [cordon](http://kubernetes.io/docs/user-guide/kubectl/kubectl_cordon/)
 a unit for maintenance.
 
-
-#### Resume
+### Resume
 
 Resuming the workload will [uncordon](http://kubernetes.io/docs/user-guide/kubectl/kubectl_uncordon/) a paused unit. Workloads will automatically migrate unless otherwise directed via their application declaration.
 
 ## Private registry
 
-With the "registry" action that is part for the kubernetes-worker charm, you can very easily create a private docker registry, with authentication, and available over TLS. Please note that the registry deployed with the action is not HA, and uses storage tied to the kubernetes node where the pod is running. So if the registry pod changes is migrated from one node to another for whatever reason, you will need to re-publish the images.
+This charm supports the `docker-registry` interface, which can automatically
+configure docker on the kubernetes-worker to communicate with a deployed
+[docker-registry][] charm.
 
 ### Example usage
 
-Create the relevant authentication files. Let's say you want user `userA` to authenticate with the password `passwordA`. Then you'll do :
+Deploy and relate `docker-registry` to kubernetes-worker, with optional basic auth and TLS enabled:
 
-    echo -n "userA:passwordA" > htpasswd-plain
-    htpasswd -c -b -B htpasswd userA passwordA
+```bash
+juju deploy ~containers/docker-registry
+juju config docker-registry auth-basic-user=YOUR_USER auth-basic-password=YOUR_PASSWORD
 
-(the `htpasswd` program comes with the `apache2-utils` package)
+juju relate docker-registry easyrsa
+juju relate kubernetes-worker:docker-registry docker-registry:docker-registry
+```
 
-Supposing your registry will be reachable at `myregistry.company.com`, and that you already have your TLS key in the `registry.key` file, and your TLS certificate (with `myregistry.company.com` as Common Name) in the `registry.crt` file, you would then run :
+Configure kubernetes-worker to use images pushed to the `docker-registry` charm:
 
-    juju run-action kubernetes-worker/0 registry domain=myregistry.company.com htpasswd="$(base64 -w0 htpasswd)" htpasswd-plain="$(base64 -w0 htpasswd-plain)" tlscert="$(base64 -w0 registry.crt)" tlskey="$(base64 -w0 registry.key)" ingress=true
+```bash
+juju config kubernetes-worker default-backend-image=YOUR_REGISTRY/defaultbackend-amd64:1.5
+```
 
-If you then decide that you want do delete the registry, just run :
+Learn more about the `docker-registry` capabilities at [docker-registry][].
 
-    juju run-action kubernetes-worker/0 registry delete=true ingress=true
+[docker-registry]: https://jujucharms.com/u/containers/docker-registry
 
 ## Known Limitations
 
@@ -110,7 +115,7 @@ opened manually and can be performed across an entire worker pool.
 If your NodePort service port selected is `30510` you can open this across all
 members of a worker pool named `kubernetes-worker` like so:
 
-```
+```bash
 juju run --application kubernetes-worker open-port 30510/tcp
 ```
 
@@ -126,6 +131,6 @@ rulechains.
 If you need to close the NodePort once a workload has been terminated, you can
 follow the same steps inversely.
 
-```
+```bash
 juju run --application kubernetes-worker close-port 30510
 ```
