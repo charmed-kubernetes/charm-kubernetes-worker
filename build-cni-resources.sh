@@ -2,7 +2,7 @@
 
 set -eux
 
-CNI_VERSION="${CNI_VERSION:-v0.7.1}"
+CNI_VERSION="${CNI_VERSION:-v0.7.4}"
 ARCH="${ARCH:-amd64 arm64 s390x}"
 
 build_script_commit="$(git show --oneline -q)"
