@@ -30,6 +30,8 @@ from subprocess import check_call, check_output
 from subprocess import CalledProcessError
 from socket import gethostname
 
+from charms.docker import DockerOpts
+
 from charms import layer
 from charms.layer import snap
 from charms.reactive import hook
@@ -41,7 +43,8 @@ from charms.reactive.helpers import data_changed
 from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
-from charmhelpers.core.host import install_ca_cert, service_stop, service_restart
+from charmhelpers.core.host import install_ca_cert
+from charmhelpers.core.host import service_stop, service_restart
 from charmhelpers.contrib.charmsupport import nrpe
 
 from charms.layer.kubernetes_common import kubeclientconfig_path
@@ -62,7 +65,6 @@ from charms.layer.kubernetes_common import write_azure_snap_config
 from charms.layer.kubernetes_common import kubeproxyconfig_path
 from charms.layer.kubernetes_common import configure_kube_proxy
 from charms.layer.kubernetes_common import get_version
-from charms.layer.kubernetes_common import manage_docker_opts, manage_registry_certs
 
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
@@ -202,8 +204,6 @@ def shutdown():
 @when_not('kubernetes-worker.cni-plugins.installed')
 def install_cni_plugins():
     ''' Unpack the cni-plugins resource '''
-    charm_dir = os.getenv('CHARM_DIR')
-
     # Get the resource via resource_get
     try:
         resource_name = 'cni-{}'.format(arch())
@@ -1346,3 +1346,61 @@ def remove_registry():
         check_call(['docker', 'logout', netloc])
 
     remove_state('kubernetes-worker.registry.configured')
+
+
+def manage_docker_opts(opts, remove=False):
+    '''Add or remove docker daemon options.
+
+    Options here will be merged with configured docker-opts when layer-docker
+    processes a daemon restart.
+
+    :param: dict opts: option keys/values; use None value if the key is a flag
+    :param: bool remove: True to remove the options; False to add them
+    '''
+    docker_opts = DockerOpts()
+    for k, v in opts.items():
+        # Always remove existing option
+        if docker_opts.exists(k):
+            docker_opts.pop(k)
+        if not remove:
+            docker_opts.add(k, v)
+    hookenv.log('DockerOpts daemon options changed. Requesting a restart.')
+    # State will be removed by layer-docker after restart
+    set_state('docker.restart')
+
+
+def manage_registry_certs(subdir, remove=False):
+    '''Add or remove TLS data for a specific registry.
+
+    When present, the docker client will use certificates when communicating
+    with a specific registry.
+
+    :param: str subdir: subdirectory to store the client certificates
+    :param: bool remove: True to remove cert data; False to add it
+    '''
+    cert_dir = '/etc/docker/certs.d/{}'.format(subdir)
+
+    if remove:
+        if os.path.isdir(cert_dir):
+            hookenv.log('Disabling registry TLS: {}.'.format(cert_dir))
+            shutil.rmtree(cert_dir)
+    else:
+        tls_options = layer.options('tls-client')
+        client_cert_path = tls_options.get('client_certificate_path')
+        client_key_path = tls_options.get('client_key_path')
+
+        os.makedirs(cert_dir, exist_ok=True)
+        client_tls = {
+            client_cert_path: '{}/client.cert'.format(cert_dir),
+            client_key_path: '{}/client.key'.format(cert_dir),
+        }
+        for f, link in client_tls.items():
+            if os.path.isfile(f):
+                try:
+                    os.remove(link)
+                except FileNotFoundError:
+                    pass
+                hookenv.log('Creating registry TLS link: {}.'.format(link))
+                os.symlink(f, link)
+            else:
+                hookenv.log('Missing TLS file for registry: {}.'.format(f))
