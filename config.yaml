@@ -70,6 +70,11 @@ options:
       to attempt auto-retrieval of intermediate certificates.  The default
       (false) is recommended for all production kubernetes installations, and
       any environment which does not have outbound Internet access.
+  ingress-num-replicas:
+    type: string
+    default: "1"
+    description: |
+      Number of replicas used for ingress. Increase to handle more ingress traffic.
   nginx-image:
     type: string
     default: "auto"

@@ -4,6 +4,7 @@ metadata:
   name: ingress-nginx-{{ juju_application }}
   labels:
     cdk-{{ juju_application }}-ingress: "true"
+
 ---
 kind: ConfigMap
 apiVersion: v1
@@ -14,6 +15,7 @@ metadata:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+
 ---
 kind: ConfigMap
 apiVersion: v1
@@ -24,6 +26,7 @@ metadata:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+
 ---
 kind: ConfigMap
 apiVersion: v1
@@ -34,6 +37,7 @@ metadata:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -44,6 +48,7 @@ metadata:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
@@ -90,21 +95,23 @@ rules:
   - apiGroups:
       - ""
     resources:
-        - events
+      - events
     verbs:
-        - create
-        - patch
+      - create
+      - patch
   - apiGroups:
       - "extensions"
     resources:
       - ingresses/status
     verbs:
       - update
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: Role
 metadata:
   name: nginx-ingress-role-{{ juju_application }}
+  namespace: ingress-nginx-{{ juju_application }}
   labels:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
@@ -144,11 +151,13 @@ rules:
       - endpoints
     verbs:
       - get
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: RoleBinding
 metadata:
   name: nginx-ingress-role-nisa-binding-{{ juju_application }}
+  namespace: ingress-nginx-{{ juju_application }}
   labels:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
@@ -161,6 +170,7 @@ subjects:
   - kind: ServiceAccount
     name: nginx-ingress-serviceaccount-{{ juju_application }}
     namespace: ingress-nginx-{{ juju_application }}
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
@@ -178,9 +188,10 @@ subjects:
   - kind: ServiceAccount
     name: nginx-ingress-serviceaccount-{{ juju_application }}
     namespace: ingress-nginx-{{ juju_application }}
+
 ---
-apiVersion: {{ daemonset_api_version }}
-kind: DaemonSet
+apiVersion: extensions/v1beta1
+kind: Deployment
 metadata:
   name: nginx-ingress-controller-{{ juju_application }}
   namespace: ingress-nginx-{{ juju_application }}
@@ -190,6 +201,7 @@ metadata:
     juju-application: nginx-ingress-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
 spec:
+  replicas: {{ num_replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
@@ -211,63 +223,56 @@ spec:
       # see https://github.com/kubernetes/kubernetes/issues/23920
       hostNetwork: true
       containers:
-      - image: {{ ingress_image }}
-        name: nginx-ingress-{{ juju_application }}
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 10254
-            scheme: HTTP
-          initialDelaySeconds: 30
-          timeoutSeconds: 5
-        securityContext:
-          capabilities:
-            drop:
-              - ALL
-            add:
-              - NET_BIND_SERVICE
-          # www-data -> 33
-          runAsUser: 33
-        # use downward API
-        env:
-          - name: POD_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.name
-          - name: POD_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-        ports:
-          - name: http
-            containerPort: 80
-          - name: https
-            containerPort: 443
-        args:
-        - /nginx-ingress-controller
-        - --default-backend-service=$(POD_NAMESPACE)/default-http-backend-{{ juju_application }}
-        - --configmap=$(POD_NAMESPACE)/nginx-configuration
-        - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services
-        - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
-        - --publish-service=$(POD_NAMESPACE)/ingress-nginx
-        - --annotations-prefix=nginx.ingress.kubernetes.io
-        - --enable-ssl-chain-completion={{ ssl_chain_completion }}
-        livenessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /healthz
-            port: 10254
-            scheme: HTTP
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          successThreshold: 1
-          timeoutSeconds: 1
-        readinessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /healthz
-            port: 10254
-            scheme: HTTP
-          periodSeconds: 10
-          successThreshold: 1
-          timeoutSeconds: 1
+        - name: nginx-ingress-controller{{ juju_application }}
+          image: {{ ingress_image }}
+          args:
+            - /nginx-ingress-controller
+            - --configmap=$(POD_NAMESPACE)/nginx-configuration
+            - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services
+            - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
+            - --publish-service=$(POD_NAMESPACE)/ingress-nginx
+            - --annotations-prefix=nginx.ingress.kubernetes.io
+            - --enable-ssl-chain-completion={{ ssl_chain_completion }}
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+            # www-data -> 33
+            runAsUser: 33
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 10254
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 10254
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+
+---

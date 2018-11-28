@@ -528,7 +528,7 @@ def sdn_changed():
 @when('kubernetes-worker.config.created')
 @when_not('kubernetes-worker.ingress.available')
 def render_and_launch_ingress():
-    ''' If configuration has ingress daemon set enabled, launch the ingress
+    ''' If configuration has ingress deployment enabled, launch the ingress
     load balancer and default http backend. Otherwise attempt deletion. '''
     config = hookenv.config()
     # If ingress is enabled, launch the ingress controller
@@ -539,7 +539,7 @@ def render_and_launch_ingress():
         kubectl_manifest('delete',
                          '/root/cdk/addons/default-http-backend.yaml')
         kubectl_manifest('delete',
-                         '/root/cdk/addons/ingress-daemon-set.yaml')  # noqa
+                         '/root/cdk/addons/ingress-deployment.yaml')  # noqa
         hookenv.close_port(80)
         hookenv.close_port(443)
 
@@ -799,7 +799,8 @@ def configure_kubelet(dns, ingress_ip):
 
 @when_any('config.changed.default-backend-image',
           'config.changed.ingress-ssl-chain-completion',
-          'config.changed.nginx-image')
+          'config.changed.nginx-image',
+          'config.changed.ingress-num-replicas')
 @when('kubernetes-worker.config.created')
 def launch_default_ingress_controller():
     ''' Launch the Kubernetes ingress controller & default backend (404) '''
@@ -828,24 +829,21 @@ def launch_default_ingress_controller():
             context['defaultbackend_image'] = \
                 "k8s.gcr.io/defaultbackend-amd64:1.5"
 
-    # Render the ingress daemon set controller manifest
+    # Render the ingress deployment controller manifest
     context['ssl_chain_completion'] = config.get(
         'ingress-ssl-chain-completion')
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.19.0',  # noqa
-                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.19.0',  # noqa
-                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.19.0',  # noqa
-                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.19.0',  # noqa
+        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.21.0',  # noqa
+                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.21.0',  # noqa
+                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.21.0',  # noqa
+                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.21.0',  # noqa
                   }
         context['ingress_image'] = images.get(context['arch'], images['amd64'])
-    if get_version('kubelet') < (1, 9):
-        context['daemonset_api_version'] = 'extensions/v1beta1'
-    else:
-        context['daemonset_api_version'] = 'apps/v1beta2'
-    manifest = addon_path.format('ingress-daemon-set.yaml')
-    render('ingress-daemon-set.yaml', manifest, context)
-    hookenv.log('Creating the ingress daemon set.')
+    manifest = addon_path.format('ingress-deployment.yaml')
+    context['num_replicas'] = config.get('ingress-num-replicas')
+    render('ingress-deployment.yaml', manifest, context)
+    hookenv.log('Creating the ingress deployment.')
     try:
         kubectl('apply', '-f', manifest)
     except CalledProcessError as e:
@@ -856,7 +854,7 @@ def launch_default_ingress_controller():
         return
 
     # Render the default http backend (404) replicationcontroller manifest
-    # needs to happen after ingress-daemon-set since that sets up the namespace
+    # needs to happen after ingress-deployment since that sets up the namespace
     manifest = addon_path.format('default-http-backend.yaml')
     render('default-http-backend.yaml', manifest, context)
     hookenv.log('Creating the default http backend.')
