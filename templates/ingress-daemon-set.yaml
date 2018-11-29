@@ -190,8 +190,8 @@ subjects:
     namespace: ingress-nginx-{{ juju_application }}
 
 ---
-apiVersion: extensions/v1beta1
-kind: Deployment
+apiVersion: {{ daemonset_api_version }}
+kind: DaemonSet
 metadata:
   name: nginx-ingress-controller-{{ juju_application }}
   namespace: ingress-nginx-{{ juju_application }}
@@ -201,7 +201,6 @@ metadata:
     juju-application: nginx-ingress-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
 spec:
-  replicas: {{ num_replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
