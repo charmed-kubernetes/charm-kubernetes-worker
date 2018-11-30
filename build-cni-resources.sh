@@ -34,7 +34,7 @@ mkdir "$temp_dir"
       echo "Built $(date)" >> BUILD_INFO
       echo "build script commit: $build_script_commit" >> BUILD_INFO
       echo "cni-plugins commit: $(git show --oneline -q)" >> BUILD_INFO
-      tar -czf "$temp_dir/cni-$arch-$CNI_VERSION.tgz" .
+      tar -czf "$temp_dir/cni-$arch.tgz" .
     )
   done
 )
