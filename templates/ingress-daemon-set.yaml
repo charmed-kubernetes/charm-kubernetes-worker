@@ -227,9 +227,8 @@ spec:
           args:
             - /nginx-ingress-controller
             - --configmap=$(POD_NAMESPACE)/nginx-configuration
-            - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services
-            - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
-            - --publish-service=$(POD_NAMESPACE)/ingress-nginx
+            - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services-{{ juju_application }}
+            - --udp-services-configmap=$(POD_NAMESPACE)/udp-services-{{ juju_application }}
             - --annotations-prefix=nginx.ingress.kubernetes.io
             - --enable-ssl-chain-completion={{ ssl_chain_completion }}
           securityContext:
