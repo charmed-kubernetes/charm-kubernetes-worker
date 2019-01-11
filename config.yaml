@@ -15,7 +15,7 @@ options:
     type: string
     default: "true"
     description: |
-      This option is now depricated and has no effect.
+      This option is now deprecated and has no effect.
   channel:
     type: string
     default: "1.13/stable"
