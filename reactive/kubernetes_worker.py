@@ -53,7 +53,6 @@ from charms.layer.kubernetes_common import check_resources_for_upgrade_needed
 from charms.layer.kubernetes_common import calculate_and_store_resource_checksums  # noqa
 from charms.layer.kubernetes_common import get_ingress_address
 from charms.layer.kubernetes_common import create_kubeconfig
-from charms.layer.kubernetes_common import kubectl_manifest, kubectl_success
 from charms.layer.kubernetes_common import kubectl
 from charms.layer.kubernetes_common import arch, get_node_name
 from charms.layer.kubernetes_common import configure_kubernetes_service
@@ -115,6 +114,11 @@ def upgrade_charm():
             # Removing node label failed. Probably the master is unavailable.
             # Proceed with the upgrade in hope GPUs will still be there.
             hookenv.log('Failed to remove GPU labels. Proceed with upgrade.')
+
+    if hookenv.config('ingress'):
+        set_state('kubernetes-worker.ingress.enabled')
+    else:
+        remove_state('kubernetes-worker.ingress.enabled')
 
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
@@ -509,13 +513,6 @@ def configure_cni(cni):
     cni.set_config(is_master=False, kubeconfig_path=kubeconfig_path)
 
 
-@when('config.changed.ingress')
-def toggle_ingress_state():
-    ''' Ingress is a toggled state. Remove ingress.available if set when
-    toggled '''
-    remove_state('kubernetes-worker.ingress.available')
-
-
 @when('docker.sdn.configured')
 def sdn_changed():
     '''The Software Defined Network changed on the container so restart the
@@ -523,25 +520,6 @@ def sdn_changed():
     restart_unit_services()
     update_kubelet_status()
     remove_state('docker.sdn.configured')
-
-
-@when('kubernetes-worker.config.created')
-@when_not('kubernetes-worker.ingress.available')
-def render_and_launch_ingress():
-    ''' If configuration has ingress daemon set enabled, launch the ingress
-    load balancer and default http backend. Otherwise attempt deletion. '''
-    config = hookenv.config()
-    # If ingress is enabled, launch the ingress controller
-    if config.get('ingress'):
-        launch_default_ingress_controller()
-    else:
-        hookenv.log('Deleting the http backend and ingress.')
-        kubectl_manifest('delete',
-                         '/root/cdk/addons/default-http-backend.yaml')
-        kubectl_manifest('delete',
-                         '/root/cdk/addons/ingress-daemon-set.yaml')  # noqa
-        hookenv.close_port(80)
-        hookenv.close_port(443)
 
 
 @when('config.changed.labels')
@@ -797,11 +775,26 @@ def configure_kubelet(dns, ingress_ip):
                                  'kubelet-extra-args')
 
 
+@when('config.changed.ingress')
+def toggle_ingress_state():
+    ''' Ingress is a toggled state. Remove ingress.available if set when
+    toggled '''
+    if hookenv.config('ingress'):
+        set_state('kubernetes-worker.ingress.enabled')
+    else:
+        remove_state('kubernetes-worker.ingress.enabled')
+
+
 @when_any('config.changed.default-backend-image',
           'config.changed.ingress-ssl-chain-completion',
           'config.changed.nginx-image')
-@when('kubernetes-worker.config.created')
-def launch_default_ingress_controller():
+def reconfigure_ingress():
+    remove_state('kubernetes-worker.ingress.available')
+
+
+@when('kubernetes-worker.config.created', 'kubernetes-worker.ingress.enabled')
+@when_not('kubernetes-worker.ingress.available')
+def render_and_launch_ingress():
     ''' Launch the Kubernetes ingress controller & default backend (404) '''
     config = hookenv.config()
 
@@ -872,6 +865,25 @@ def launch_default_ingress_controller():
     set_state('kubernetes-worker.ingress.available')
     hookenv.open_port(80)
     hookenv.open_port(443)
+
+
+@when('kubernetes-worker.config.created',
+      'kubernetes-worker.ingress.available')
+@when_not('kubernetes-worker.ingress.enabled')
+def disable_ingress():
+    hookenv.log('Deleting the http backend and ingress.')
+    hookenv.close_port(80)
+    hookenv.close_port(443)
+    try:
+        kubectl('delete', '--ignore-not-found', '-f',
+                '/root/cdk/addons/default-http-backend.yaml')
+        kubectl('delete', '--ignore-not-found', '-f',
+                '/root/cdk/addons/ingress-daemon-set.yaml')
+    except CalledProcessError:
+        traceback.print_exc()
+        hookenv.log('Failed to disable ingress, waiting to retry')
+        return
+    remove_state('kubernetes-worker.ingress.available')
 
 
 def restart_unit_services():
