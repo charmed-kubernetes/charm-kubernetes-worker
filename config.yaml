@@ -15,12 +15,7 @@ options:
     type: string
     default: "true"
     description: |
-      Allow privileged containers to run on worker nodes. Supported values are
-      "true", "false", and "auto". If "true", kubelet will run in privileged
-      mode by default. If "false", kubelet will never run in privileged mode.
-      If "auto", kubelet will not run in privileged mode by default, but will
-      switch to privileged mode if gpu hardware is detected. Pod security
-      policies (PSP) should be used to restrict container privileges.
+      This option is now deprecated and has no effect.
   channel:
     type: string
     default: "1.13/stable"
