@@ -64,6 +64,11 @@ from charms.layer.kubernetes_common import write_azure_snap_config
 from charms.layer.kubernetes_common import kubeproxyconfig_path
 from charms.layer.kubernetes_common import configure_kube_proxy
 from charms.layer.kubernetes_common import get_version
+from charms.layer.kubernetes_common import ca_crt_path
+from charms.layer.kubernetes_common import server_crt_path
+from charms.layer.kubernetes_common import server_key_path
+from charms.layer.kubernetes_common import client_crt_path
+from charms.layer.kubernetes_common import client_key_path
 
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
@@ -119,6 +124,9 @@ def upgrade_charm():
         set_state('kubernetes-worker.ingress.enabled')
     else:
         remove_state('kubernetes-worker.ingress.enabled')
+
+    # force certs to be updated
+    send_data()
 
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
@@ -428,9 +436,11 @@ def update_kubelet_status():
 
 
 @when('certificates.available', 'kube-control.connected')
-def send_data(tls, kube_control):
+def send_data():
     '''Send the data that is required to create a server certificate for
     this server.'''
+    kube_control = endpoint_from_flag('kube-control.connected')
+
     # Use the public ip of this unit as the Common Name for the certificate.
     common_name = hookenv.unit_public_ip()
 
@@ -443,11 +453,15 @@ def send_data(tls, kube_control):
         gethostname()
     ]
 
-    # Create a path safe name by removing path characters from the unit name.
-    certificate_name = hookenv.local_unit().replace('/', '_')
-
     # Request a server cert with this information.
-    tls.request_server_cert(common_name, sans, certificate_name)
+    layer.tls_client.request_server_cert(common_name, sans,
+                                         crt_path=server_crt_path,
+                                         key_path=server_key_path)
+
+    # Request a client cert for kubelet.
+    layer.tls_client.request_server_cert('system:kubelet',
+                                         crt_path=client_crt_path,
+                                         key_path=client_key_path)
 
 
 @when('kube-api-endpoint.available', 'kube-control.dns.available',
@@ -467,9 +481,7 @@ def watch_for_changes(kube_api, kube_control, cni):
 
 
 @when('kubernetes-worker.snaps.installed', 'kube-api-endpoint.available',
-      'tls_client.ca.saved', 'tls_client.client.certificate.saved',
-      'tls_client.client.key.saved', 'tls_client.server.certificate.saved',
-      'tls_client.server.key.saved',
+      'tls_client.ca.saved', 'tls_client.certs.saved',
       'kube-control.dns.available', 'kube-control.auth.available',
       'cni.available', 'kubernetes-worker.restart-needed',
       'worker.auth.bootstrapped')
@@ -579,6 +591,12 @@ def config_changed_requires_restart():
     set_state('kubernetes-worker.restart-needed')
 
 
+@when('tls_client.certs.changed')
+def restart_for_certs():
+    set_state('kubernetes-worker.restart-needed')
+    remove_state('tls_client.certs.changed')
+
+
 @when('config.changed.docker-logins')
 def docker_logins_changed():
     """Set a flag to handle new docker login options.
@@ -628,24 +646,19 @@ def run_docker_login():
 
 def create_config(server, creds):
     '''Create a kubernetes configuration for the worker unit.'''
-    # Get the options from the tls-client layer.
-    layer_options = layer.options('tls-client')
-    # Get all the paths to the tls information required for kubeconfig.
-    ca = layer_options.get('ca_certificate_path')
-
     # Create kubernetes configuration in the default location for ubuntu.
-    create_kubeconfig('/home/ubuntu/.kube/config', server, ca,
+    create_kubeconfig('/home/ubuntu/.kube/config', server, ca_crt_path,
                       token=creds['client_token'], user='ubuntu')
     # Make the config dir readable by the ubuntu users so juju scp works.
     cmd = ['chown', '-R', 'ubuntu:ubuntu', '/home/ubuntu/.kube']
     check_call(cmd)
     # Create kubernetes configuration in the default location for root.
-    create_kubeconfig(kubeclientconfig_path, server, ca,
+    create_kubeconfig(kubeclientconfig_path, server, ca_crt_path,
                       token=creds['client_token'], user='root')
     # Create kubernetes configuration for kubelet, and kube-proxy services.
-    create_kubeconfig(kubeconfig_path, server, ca,
+    create_kubeconfig(kubeconfig_path, server, ca_crt_path,
                       token=creds['kubelet_token'], user='kubelet')
-    create_kubeconfig(kubeproxyconfig_path, server, ca,
+    create_kubeconfig(kubeproxyconfig_path, server, ca_crt_path,
                       token=creds['proxy_token'], user='kube-proxy')
 
 
@@ -664,11 +677,6 @@ def merge_kubelet_extra_config(config, extra_config):
 
 
 def configure_kubelet(dns, ingress_ip):
-    layer_options = layer.options('tls-client')
-    ca_cert_path = layer_options.get('ca_certificate_path')
-    server_cert_path = layer_options.get('server_certificate_path')
-    server_key_path = layer_options.get('server_key_path')
-
     kubelet_opts = {}
     kubelet_opts['require-kubeconfig'] = 'true'
     kubelet_opts['kubeconfig'] = kubeconfig_path
@@ -711,14 +719,14 @@ def configure_kubelet(dns, ingress_ip):
                     'enabled': False
                 },
                 'x509': {
-                    'clientCAFile': ca_cert_path
+                    'clientCAFile': str(ca_crt_path)
                 }
             },
             'clusterDomain': dns['domain'],
             'failSwapOn': False,
             'port': 10250,
-            'tlsCertFile': server_cert_path,
-            'tlsPrivateKeyFile': server_key_path
+            'tlsCertFile': str(server_crt_path),
+            'tlsPrivateKeyFile': str(server_key_path)
         }
         if dns['enable-kube-dns']:
             kubelet_config['clusterDNS'] = [dns['sdn-ip']]
@@ -750,12 +758,12 @@ def configure_kubelet(dns, ingress_ip):
         # this whole block and the parent if statement.
         kubelet_opts['address'] = '0.0.0.0'
         kubelet_opts['anonymous-auth'] = 'false'
-        kubelet_opts['client-ca-file'] = ca_cert_path
+        kubelet_opts['client-ca-file'] = str(ca_crt_path)
         kubelet_opts['cluster-domain'] = dns['domain']
         kubelet_opts['fail-swap-on'] = 'false'
         kubelet_opts['port'] = '10250'
-        kubelet_opts['tls-cert-file'] = server_cert_path
-        kubelet_opts['tls-private-key-file'] = server_key_path
+        kubelet_opts['tls-cert-file'] = str(server_crt_path)
+        kubelet_opts['tls-private-key-file'] = str(server_key_path)
         if dns['enable-kube-dns']:
             kubelet_opts['cluster-dns'] = dns['sdn-ip']
         if is_state('kubernetes-worker.gpu.enabled'):
