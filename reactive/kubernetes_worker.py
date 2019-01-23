@@ -126,7 +126,9 @@ def upgrade_charm():
         remove_state('kubernetes-worker.ingress.enabled')
 
     # force certs to be updated
-    send_data()
+    if is_state('certificates.available') and \
+       is_state('kube-control.connected'):
+        send_data()
 
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
@@ -459,7 +461,7 @@ def send_data():
                                          key_path=server_key_path)
 
     # Request a client cert for kubelet.
-    layer.tls_client.request_server_cert('system:kubelet',
+    layer.tls_client.request_client_cert('system:kubelet',
                                          crt_path=client_crt_path,
                                          key_path=client_key_path)
 
@@ -1402,13 +1404,9 @@ def manage_registry_certs(subdir, remove=False):
             hookenv.log('Disabling registry TLS: {}.'.format(cert_dir))
             shutil.rmtree(cert_dir)
     else:
-        tls_options = layer.options('tls-client')
-        client_cert_path = tls_options.get('client_certificate_path')
-        client_key_path = tls_options.get('client_key_path')
-
         os.makedirs(cert_dir, exist_ok=True)
         client_tls = {
-            client_cert_path: '{}/client.cert'.format(cert_dir),
+            client_crt_path: '{}/client.cert'.format(cert_dir),
             client_key_path: '{}/client.key'.format(cert_dir),
         }
         for f, link in client_tls.items():
