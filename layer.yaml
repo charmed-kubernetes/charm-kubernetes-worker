@@ -4,7 +4,6 @@ includes:
   - 'layer:debug'
   - 'layer:snap'
   - 'layer:leadership'
-  - 'layer:docker'
   - 'layer:metrics'
   - 'layer:nagios'
   - 'layer:tls-client'
@@ -20,7 +19,6 @@ includes:
   - 'interface:vsphere-integration'
   - 'interface:azure-integration'
   - 'interface:mount'
-  - 'interface:docker-registry'
 config:
   deletes:
     - install_from_upstream
