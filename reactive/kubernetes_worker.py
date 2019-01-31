@@ -128,7 +128,7 @@ def upgrade_charm():
         send_data()
 
     if is_state('kubernetes-worker.registry.configured'):
-        set_state('kubernetes-common.registry.configured')
+        set_state('kubernetes-master-worker-base.registry.configured')
         remove_state('kubernetes-worker.registry.configured')
 
     remove_state('kubernetes-worker.cni-plugins.installed')
