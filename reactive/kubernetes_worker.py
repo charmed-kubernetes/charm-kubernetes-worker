@@ -311,15 +311,14 @@ def process_snapd_timer():
 
     # The first time through, data_changed will be true. Subsequent calls
     # should only update leader data if something changed.
-    if timer and data_changed('worker_snapd_refresh', timer):
-        hookenv.log('setting snapd_refresh timer to: {}'.format(timer))
+    if data_changed('worker_snapd_refresh', timer):
+        hookenv.log('setting leader snapd_refresh timer to: {}'.format(timer))
         leader_set({'snapd_refresh': timer})
 
 
 @when('kubernetes-worker.snaps.installed')
 @when('snap.refresh.set')
-@when('leadership.set.snapd_refresh',
-      'leadership.changed.snapd_refresh')
+@when('leadership.changed.snapd_refresh')
 @when_not('leadership.is_leader')
 def set_snapd_timer():
     ''' Set the snapd refresh.timer on non-leader cluster members. '''
@@ -327,7 +326,7 @@ def set_snapd_timer():
     # Layer-snap will always set a core refresh.timer, which may not be the
     # same as our leader. Gating with 'snap.refresh.set' ensures layer-snap
     # has finished and we are free to set our config to the leader's timer.
-    timer = leader_get('snapd_refresh')
+    timer = leader_get('snapd_refresh') or ''  # None will cause error
     hookenv.log('setting snapd_refresh timer to: {}'.format(timer))
     snap.set_refresh_timer(timer)
 
