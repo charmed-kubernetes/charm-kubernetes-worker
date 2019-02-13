@@ -24,8 +24,6 @@ import time
 import traceback
 import yaml
 
-from charms.leadership import leader_get, leader_set
-
 from subprocess import check_call, check_output
 from subprocess import CalledProcessError
 from socket import gethostname
@@ -291,44 +289,6 @@ def set_app_version():
     cmd = ['kubelet', '--version']
     version = check_output(cmd)
     hookenv.application_version_set(version.split(b' v')[-1].rstrip())
-
-
-@when('kubernetes-worker.snaps.installed')
-@when('snap.refresh.set')
-@when('leadership.is_leader')
-def process_snapd_timer():
-    ''' Set the snapd refresh timer on the leader so all cluster members
-    (present and future) will refresh near the same time. '''
-    # Get the current snapd refresh timer; we know layer-snap has set this
-    # when the 'snap.refresh.set' flag is present.
-    timer = snap.get(snapname='core', key='refresh.timer').decode('utf-8')
-    if not timer:
-        # A subordinate wiped out our value, so we need to force it to be set
-        # again. Luckily, the subordinate should only wipe it out once, on
-        # first install, so this should remain stable afterward.
-        snap.set_refresh_timer(hookenv.config('snapd_refresh'))
-        timer = snap.get(snapname='core', key='refresh.timer').decode('utf-8')
-
-    # The first time through, data_changed will be true. Subsequent calls
-    # should only update leader data if something changed.
-    if data_changed('worker_snapd_refresh', timer):
-        hookenv.log('setting leader snapd_refresh timer to: {}'.format(timer))
-        leader_set({'snapd_refresh': timer})
-
-
-@when('kubernetes-worker.snaps.installed')
-@when('snap.refresh.set')
-@when('leadership.changed.snapd_refresh')
-@when_not('leadership.is_leader')
-def set_snapd_timer():
-    ''' Set the snapd refresh.timer on non-leader cluster members. '''
-    # NB: This method should only be run when 'snap.refresh.set' is present.
-    # Layer-snap will always set a core refresh.timer, which may not be the
-    # same as our leader. Gating with 'snap.refresh.set' ensures layer-snap
-    # has finished and we are free to set our config to the leader's timer.
-    timer = leader_get('snapd_refresh') or ''  # None will cause error
-    hookenv.log('setting snapd_refresh timer to: {}'.format(timer))
-    snap.set_refresh_timer(timer)
 
 
 @hookenv.atexit
