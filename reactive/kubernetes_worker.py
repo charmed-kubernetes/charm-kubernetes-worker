@@ -16,7 +16,6 @@
 
 import json
 import os
-import random
 import re
 import shutil
 import subprocess
@@ -64,6 +63,7 @@ from charms.layer.kubernetes_common import server_crt_path
 from charms.layer.kubernetes_common import server_key_path
 from charms.layer.kubernetes_common import client_crt_path
 from charms.layer.kubernetes_common import client_key_path
+from charms.layer.kubernetes_common import get_unit_number
 
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
@@ -435,9 +435,12 @@ def send_data():
 
 @when('kube-api-endpoint.available', 'kube-control.dns.available',
       'cni.available')
-def watch_for_changes(kube_api, kube_control, cni):
+def watch_for_changes():
     ''' Watch for configuration changes and signal if we need to restart the
     worker services '''
+    kube_api = endpoint_from_flag('kube-api-endpoint.available')
+    kube_control = endpoint_from_flag('kube-control.dns.available')
+    cni = endpoint_from_flag('cni.available')
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
     cluster_cidr = cni.get_config()['cidr']
@@ -475,7 +478,7 @@ def start_worker(kube_api, kube_control, auth_control, cni):
     creds = db.get('credentials')
     data_changed('kube-control.creds', creds)
 
-    create_config(random.choice(servers), creds)
+    create_config(servers[get_unit_number() % len(servers)], creds)
     configure_kubelet(dns, ingress_ip)
     configure_kube_proxy(configure_prefix, servers,
                          cluster_cidr)
