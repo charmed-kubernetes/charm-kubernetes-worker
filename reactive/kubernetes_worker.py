@@ -805,10 +805,10 @@ def render_and_launch_ingress():
         'ingress-ssl-chain-completion')
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.21.0',  # noqa
-                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.21.0',  # noqa
-                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.21.0',  # noqa
-                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.21.0',  # noqa
+        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.22.0',  # noqa
+                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0',  # noqa
+                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
+                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
                   }
         context['ingress_image'] = images.get(context['arch'], images['amd64'])
     if get_version('kubelet') < (1, 9):
