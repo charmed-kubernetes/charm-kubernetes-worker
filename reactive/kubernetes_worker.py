@@ -792,7 +792,7 @@ def render_and_launch_ingress():
        context['defaultbackend_image'] == "auto"):
         if context['arch'] == 's390x':
             context['defaultbackend_image'] = \
-                "k8s.gcr.io/defaultbackend-s390x:1.5"
+                "k8s.gcr.io/defaultbackend-s390x:1.4"
         elif context['arch'] == 'arm64':
             context['defaultbackend_image'] = \
                 "k8s.gcr.io/defaultbackend-arm64:1.5"
