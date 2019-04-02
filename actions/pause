@@ -7,8 +7,8 @@ export PATH=$PATH:/snap/bin
 DELETE_LOCAL_DATA=$(action-get delete-local-data)
 FORCE=$(action-get force)
 
-# placeholder for additional flags to the command
-export EXTRA_FLAGS=""
+# Needed to drain CDK nodes.
+export EXTRA_FLAGS="--ignore-daemonsets --delete-local-data"
 
 # Determine if we have extra flags
 if [[ "${DELETE_LOCAL_DATA}" == "True" || "${DELETE_LOCAL_DATA}" == "true" ]]; then

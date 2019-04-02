@@ -80,6 +80,18 @@ os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 db = unitdata.kv()
 
 
+@when('endpoint.container-runtime.available')
+@when_not('kubernetes-worker.restart-needed')
+def container_runtime_joined():
+    endpoint = endpoint_from_flag('endpoint.container-runtime.available')
+    config = endpoint.get_config()
+
+    if config['nvidia_enabled']:
+        set_state('nvidia.ready')
+
+    set_state('kubernetes-worker.restart-needed')
+
+
 @hook('upgrade-charm')
 def upgrade_charm():
     # migrate to new flags
@@ -91,7 +103,6 @@ def upgrade_charm():
         remove_state('kubernetes-worker.cloud-request-sent')
         set_state('kubernetes-worker.cloud.request-sent')
 
-    # Trigger removal of PPA docker installation if it was previously set.
     set_state('config.changed.install_from_upstream')
     hookenv.atexit(remove_state, 'config.changed.install_from_upstream')
 
@@ -242,7 +253,7 @@ def shutdown():
     service_stop('snap.kube-proxy.daemon')
 
 
-@when('docker.available')
+@when('endpoint.container-runtime.available')
 @when_not('kubernetes-worker.cni-plugins.installed')
 def install_cni_plugins():
     ''' Unpack the cni-plugins resource '''
@@ -452,14 +463,28 @@ def watch_for_changes():
         set_state('kubernetes-worker.restart-needed')
 
 
+@when('kubernetes-worker.cloud.pending',
+          'kubernetes-worker.cloud.blocked')
+@when_not('kubernetes-worker.snaps.installed', 'kube-api-endpoint.available',
+      'tls_client.ca.saved', 'tls_client.certs.saved',
+      'kube-control.dns.available', 'kube-control.auth.available',
+      'cni.available', 'kubernetes-worker.restart-needed',
+      'worker.auth.bootstrapped', 'endpoint.container-runtime.available')
+def no_container_runtime_connected():
+    hookenv.status_set(
+        'waiting',
+        'Connect a container runtime.'
+    )
+
+
 @when('kubernetes-worker.snaps.installed', 'kube-api-endpoint.available',
       'tls_client.ca.saved', 'tls_client.certs.saved',
       'kube-control.dns.available', 'kube-control.auth.available',
       'cni.available', 'kubernetes-worker.restart-needed',
-      'worker.auth.bootstrapped')
+      'worker.auth.bootstrapped', 'endpoint.container-runtime.available')
 @when_not('kubernetes-worker.cloud.pending',
           'kubernetes-worker.cloud.blocked')
-def start_worker(kube_api, kube_control, auth_control, cni):
+def start_worker(kube_api, kube_control, auth_control, cni, runtime):
     ''' Start kubelet using the provided API and DNS info.'''
     servers = get_kube_api_servers(kube_api)
     # Note that the DNS server doesn't necessarily exist at this point. We know
@@ -495,15 +520,6 @@ def configure_cni(cni):
     ''' Set worker configuration on the CNI relation. This lets the CNI
     subordinate know that we're the worker so it can respond accordingly. '''
     cni.set_config(is_master=False, kubeconfig_path=kubeconfig_path)
-
-
-@when('docker.sdn.configured')
-def sdn_changed():
-    '''The Software Defined Network changed on the container so restart the
-    kubernetes services.'''
-    restart_unit_services()
-    update_kubelet_status()
-    remove_state('docker.sdn.configured')
 
 
 @when('config.changed.labels')
@@ -569,53 +585,6 @@ def restart_for_certs():
     remove_state('tls_client.certs.changed')
 
 
-@when('config.changed.docker-logins')
-def docker_logins_changed():
-    """Set a flag to handle new docker login options.
-
-    If docker daemon options have also changed, set a flag to ensure the
-    daemon is restarted prior to running docker login.
-    """
-    config = hookenv.config()
-
-    if data_changed('docker-opts', config['docker-opts']):
-        hookenv.log('Found new docker daemon options. Requesting a restart.')
-        # State will be removed by layer-docker after restart
-        set_state('docker.restart')
-
-    set_state('kubernetes-worker.docker-login')
-
-
-@when('kubernetes-worker.docker-login')
-@when_not('docker.restart')
-def run_docker_login():
-    """Login to a docker registry with configured credentials."""
-    config = hookenv.config()
-
-    previous_logins = config.previous('docker-logins')
-    logins = config['docker-logins']
-    logins = json.loads(logins)
-
-    if previous_logins:
-        previous_logins = json.loads(previous_logins)
-        next_servers = {login['server'] for login in logins}
-        previous_servers = {login['server'] for login in previous_logins}
-        servers_to_logout = previous_servers - next_servers
-        for server in servers_to_logout:
-            cmd = ['docker', 'logout', server]
-            subprocess.check_call(cmd)
-
-    for login in logins:
-        server = login['server']
-        username = login['username']
-        password = login['password']
-        cmd = ['docker', 'login', server, '-u', username, '-p', password]
-        subprocess.check_call(cmd)
-
-    remove_state('kubernetes-worker.docker-login')
-    set_state('kubernetes-worker.restart-needed')
-
-
 def create_config(server, creds):
     '''Create a kubernetes configuration for the worker unit.'''
     # Create kubernetes configuration in the default location for ubuntu.
@@ -656,6 +625,13 @@ def configure_kubelet(dns, ingress_ip):
     kubelet_opts['v'] = '0'
     kubelet_opts['logtostderr'] = 'true'
     kubelet_opts['node-ip'] = ingress_ip
+
+    endpoint_config = \
+        endpoint_from_flag('endpoint.container-runtime.available').get_config()
+
+    kubelet_opts['container-runtime'] = endpoint_config['runtime']
+    if kubelet_opts['container-runtime'] == 'remote':
+        kubelet_opts['container-runtime-endpoint'] = endpoint_config['socket']
 
     kubelet_cloud_config_path = cloud_config_path('kubelet')
     if is_state('endpoint.aws.ready'):
@@ -809,7 +785,7 @@ def render_and_launch_ingress():
                   'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0',  # noqa
                   's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
                   'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
-                  }
+                 }
         context['ingress_image'] = images.get(context['arch'], images['amd64'])
     if get_version('kubelet') < (1, 9):
         context['daemonset_api_version'] = 'extensions/v1beta1'
@@ -922,7 +898,7 @@ def remove_nrpe_config(nagios=None):
         nrpe_setup.remove_check(shortname=service)
 
 
-@when('nvidia-docker.installed')
+@when('nvidia.ready')
 @when('kubernetes-worker.config.created')
 @when_not('kubernetes-worker.gpu.enabled')
 def enable_gpu():
@@ -955,11 +931,10 @@ def enable_gpu():
 
 
 @when('kubernetes-worker.gpu.enabled')
-@when_not('nvidia-docker.installed')
+@when_not('nvidia.ready')
 @when_not('kubernetes-worker.restart-needed')
 def nvidia_departed():
-    """Cuda departed, probably due to the docker layer switching to a
-     non nvidia-docker."""
+    """Cuda departed."""
     disable_gpu()
     remove_state('kubernetes-worker.gpu.enabled')
     set_state('kubernetes-worker.restart-needed')
@@ -1046,7 +1021,7 @@ def missing_kube_control():
                 hookenv.service_name()))
 
 
-@when('docker.ready')
+@when('container.available')
 def fix_iptables_for_docker_1_13():
     """ Fix iptables FORWARD policy for Docker >=1.13
     https://github.com/kubernetes/kubernetes/issues/40182

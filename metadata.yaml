@@ -47,6 +47,9 @@ provides:
   cni:
     interface: kubernetes-cni
     scope: container
+  container-runtime:
+    interface: container-runtime
+    scope: container
 resources:
   cni-amd64:
     type: file

@@ -1,11 +1,8 @@
 pause:
     description: |
-      Cordon the unit, draining all active workloads.
+      Cordon the unit, draining all active workloads.  Daemonsets are ignored
+      and local data is deleted.
     params:
-      delete-local-data:
-        type: boolean
-        description: Force deletion of local storage to enable a drain
-        default: False
       force:
         type: boolean
         description: |
