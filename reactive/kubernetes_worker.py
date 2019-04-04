@@ -89,8 +89,6 @@ def container_runtime_joined():
     if config['nvidia_enabled']:
         set_state('nvidia.ready')
 
-    set_state('kubernetes-worker.restart-needed')
-
 
 @hook('upgrade-charm')
 def upgrade_charm():
