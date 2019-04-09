@@ -304,7 +304,7 @@ def set_app_version():
 def charm_status():
     '''Update the status message with the current status of kubelet.'''
     container_runtime_connected = \
-        is_state('endpoint.container-runtime.available')
+        is_state('endpoint.container-runtime.joined')
     vsphere_joined = is_state('endpoint.vsphere.joined')
     azure_joined = is_state('endpoint.azure.joined')
     cloud_blocked = is_state('kubernetes-worker.cloud.blocked')
