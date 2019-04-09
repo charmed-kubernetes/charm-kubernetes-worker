@@ -303,9 +303,16 @@ def set_app_version():
 @hookenv.atexit
 def charm_status():
     '''Update the status message with the current status of kubelet.'''
+    container_runtime_connected = \
+        is_state('endpoint.container-runtime.available')
     vsphere_joined = is_state('endpoint.vsphere.joined')
     azure_joined = is_state('endpoint.azure.joined')
     cloud_blocked = is_state('kubernetes-worker.cloud.blocked')
+
+    if not container_runtime_connected:
+        hookenv.status_set('blocked',
+                           'Connect a container runtime.')
+        return
     if vsphere_joined and cloud_blocked:
         hookenv.status_set('blocked',
                            'vSphere integration requires K8s 1.12 or greater')
@@ -459,20 +466,6 @@ def watch_for_changes():
             data_changed('cluster-cidr', cluster_cidr)):
 
         set_state('kubernetes-worker.restart-needed')
-
-
-@when('kubernetes-worker.cloud.pending',
-          'kubernetes-worker.cloud.blocked')
-@when_not('kubernetes-worker.snaps.installed', 'kube-api-endpoint.available',
-      'tls_client.ca.saved', 'tls_client.certs.saved',
-      'kube-control.dns.available', 'kube-control.auth.available',
-      'cni.available', 'kubernetes-worker.restart-needed',
-      'worker.auth.bootstrapped', 'endpoint.container-runtime.available')
-def no_container_runtime_connected():
-    hookenv.status_set(
-        'waiting',
-        'Connect a container runtime.'
-    )
 
 
 @when('kubernetes-worker.snaps.installed', 'kube-api-endpoint.available',
@@ -1019,7 +1012,7 @@ def missing_kube_control():
                 hookenv.service_name()))
 
 
-@when('container.available')
+@when('endpoint.container-runtime.available')
 def fix_iptables_for_docker_1_13():
     """ Fix iptables FORWARD policy for Docker >=1.13
     https://github.com/kubernetes/kubernetes/issues/40182
