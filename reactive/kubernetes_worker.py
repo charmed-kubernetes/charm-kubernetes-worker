@@ -475,14 +475,17 @@ def watch_for_changes():
       'worker.auth.bootstrapped', 'endpoint.container-runtime.available')
 @when_not('kubernetes-worker.cloud.pending',
           'kubernetes-worker.cloud.blocked')
-def start_worker(kube_api, kube_control, auth_control, cni, runtime):
+def start_worker():
     ''' Start kubelet using the provided API and DNS info.'''
-    servers = get_kube_api_servers(kube_api)
     # Note that the DNS server doesn't necessarily exist at this point. We know
     # what its IP will eventually be, though, so we can go ahead and configure
     # kubelet with that info. This ensures that early pods are configured with
     # the correct DNS even though the server isn't ready yet.
+    kube_api = endpoint_from_flag('kube-api-endpoint.available')
+    kube_control = endpoint_from_flag('kube-control.dns.available')
+    cni = endpoint_from_flag('cni.available')
 
+    servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
     ingress_ip = get_ingress_address(kube_control.relation_name)
     cluster_cidr = cni.get_config()['cidr']
