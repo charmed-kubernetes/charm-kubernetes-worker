@@ -80,16 +80,6 @@ os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 db = unitdata.kv()
 
 
-@when('endpoint.container-runtime.available')
-@when_not('kubernetes-worker.restart-needed')
-def container_runtime_joined():
-    endpoint = endpoint_from_flag('endpoint.container-runtime.available')
-    config = endpoint.get_config()
-
-    if config['nvidia_enabled']:
-        set_state('nvidia.ready')
-
-
 @hook('upgrade-charm')
 def upgrade_charm():
     # migrate to new flags
@@ -450,21 +440,36 @@ def send_data():
 
 
 @when('kube-api-endpoint.available', 'kube-control.dns.available',
-      'cni.available')
+      'cni.available', 'endpoint.container-runtime.available')
 def watch_for_changes():
     ''' Watch for configuration changes and signal if we need to restart the
     worker services '''
     kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
     cni = endpoint_from_flag('cni.available')
+    container_runtime = \
+        endpoint_from_flag('endpoint.container-runtime.available')
+
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    cluster_cidr = cni.get_config()['cidr']
+    cluster_cidr = cni.get_config().get('cidr')
+    container_runtime_name = \
+        container_runtime.get_config().get('runtime')
+    container_runtime_socket = \
+        container_runtime.get_config().get('socket')
+    container_runtime_nvidia = \
+        container_runtime.get_config().get('nvidia_enabled')
+
+    if container_runtime_nvidia == 'true':
+        set_state('nvidia.ready')
+    else:
+        remove_state('nvidia.ready')
 
     if (data_changed('kube-api-servers', servers) or
             data_changed('kube-dns', dns) or
-            data_changed('cluster-cidr', cluster_cidr)):
-
+            data_changed('cluster-cidr', cluster_cidr) or
+            data_changed('container-runtime', container_runtime_name) or
+            data_changed('container-socket', container_runtime_socket)):
         set_state('kubernetes-worker.restart-needed')
 
 
