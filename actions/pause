@@ -1,28 +1,34 @@
-#!/usr/bin/env bash
+#!/usr/local/sbin/charm-env python3
 
-set -ex
+import os
+import subprocess
 
-export PATH=$PATH:/snap/bin
+from charms.layer.kubernetes_common import (
+    get_node_name,
+    kubectl,
+)
 
-DELETE_LOCAL_DATA=$(action-get delete-local-data)
-FORCE=$(action-get force)
+from charmhelpers.core.hookenv import (
+    action_fail,
+    action_get,
+    status_set,
+)
 
-# Needed to drain CDK nodes.
-export EXTRA_FLAGS="--ignore-daemonsets --delete-local-data"
+# Make sure the kubectl snap can be found
+os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 
-# Determine if we have extra flags
-if [[ "${DELETE_LOCAL_DATA}" == "True" || "${DELETE_LOCAL_DATA}" == "true" ]]; then
-  EXTRA_FLAGS="${EXTRA_FLAGS} --delete-local-data=true"
-fi
+drain_args = ['--ignore-daemonsets']
 
-if [[ "${FORCE}" == "True" || "${FORCE}" == "true" ]]; then
-  EXTRA_FLAGS="${EXTRA_FLAGS} --force"
-fi
+if action_get('delete-local-data'):
+    drain_args.append('--delete-local-data=true')
 
+if action_get('force'):
+    drain_args.append('--force')
 
-# Cordon and drain the unit
-kubectl --kubeconfig=/root/.kube/config cordon $(hostname)
-kubectl --kubeconfig=/root/.kube/config drain $(hostname) ${EXTRA_FLAGS}
+try:
+    kubectl('drain', get_node_name(), *drain_args)
+except subprocess.CalledProcessError as e:
+    action_fail('{}. See unit logs for details.'.format(str(e)))
+    raise
 
-# Set status to indicate the unit is paused and under maintenance.
-status-set 'waiting' 'Kubernetes unit paused'
+status_set('waiting', 'Kubernetes unit paused')
