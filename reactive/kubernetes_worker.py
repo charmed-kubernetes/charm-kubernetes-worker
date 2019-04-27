@@ -678,6 +678,10 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['cloud-provider'] = 'azure'
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
         kubelet_opts['provider-id'] = azure.vm_id
+    else:
+        kubelet_opts['cloud-provider'] = ''
+        kubelet_opts['cloud-config'] = ''
+        kubelet_opts['provider-id'] = ''
 
     if get_version('kubelet') >= (1, 10):
         # Put together the KubeletConfiguration data
@@ -1175,6 +1179,7 @@ def clear_cloud_flags():
     remove_state('kubernetes-worker.cloud.request-sent')
     remove_state('kubernetes-worker.cloud.blocked')
     remove_state('kubernetes-worker.cloud.ready')
+    set_state('kubernetes-worker.restart-needed')  # force restart
 
 
 @when_any('endpoint.aws.ready',
