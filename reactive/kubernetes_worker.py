@@ -678,10 +678,6 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['cloud-provider'] = 'azure'
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
         kubelet_opts['provider-id'] = azure.vm_id
-    else:
-        kubelet_opts['cloud-provider'] = ''
-        kubelet_opts['cloud-config'] = ''
-        kubelet_opts['provider-id'] = ''
 
     if get_version('kubelet') >= (1, 10):
         # Put together the KubeletConfiguration data
