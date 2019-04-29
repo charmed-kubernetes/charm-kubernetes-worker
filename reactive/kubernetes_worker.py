@@ -1170,11 +1170,16 @@ def request_integration():
            'endpoint.openstack.joined',
            'endpoint.vsphere.joined',
            'endpoint.azure.joined')
+@when_any('kubernetes-worker.cloud.pending',
+          'kubernetes-worker.cloud.request-sent',
+          'kubernetes-worker.cloud.blocked',
+          'kubernetes-worker.cloud.ready')
 def clear_cloud_flags():
     remove_state('kubernetes-worker.cloud.pending')
     remove_state('kubernetes-worker.cloud.request-sent')
     remove_state('kubernetes-worker.cloud.blocked')
     remove_state('kubernetes-worker.cloud.ready')
+    set_state('kubernetes-worker.restart-needed')  # force restart
 
 
 @when_any('endpoint.aws.ready',
