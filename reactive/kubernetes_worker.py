@@ -53,7 +53,6 @@ from charms.layer.kubernetes_common import configure_kubernetes_service
 from charms.layer.kubernetes_common import parse_extra_args
 from charms.layer.kubernetes_common import cloud_config_path
 from charms.layer.kubernetes_common import write_gcp_snap_config
-from charms.layer.kubernetes_common import write_openstack_snap_config
 from charms.layer.kubernetes_common import write_azure_snap_config
 from charms.layer.kubernetes_common import kubeproxyconfig_path
 from charms.layer.kubernetes_common import configure_kube_proxy
@@ -665,8 +664,7 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['cloud-provider'] = 'gce'
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
     elif is_state('endpoint.openstack.ready'):
-        kubelet_opts['cloud-provider'] = 'openstack'
-        kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
+        kubelet_opts['cloud-provider'] = 'external'
     elif is_state('endpoint.vsphere.joined'):
         # vsphere just needs to be joined on the worker (vs 'ready')
         kubelet_opts['cloud-provider'] = 'vsphere'
@@ -1195,19 +1193,10 @@ def cloud_ready():
     remove_state('kubernetes-worker.cloud.pending')
     if is_state('endpoint.gcp.ready'):
         write_gcp_snap_config('kubelet')
-    elif is_state('endpoint.openstack.ready'):
-        write_openstack_snap_config('kubelet')
     elif is_state('endpoint.azure.ready'):
         write_azure_snap_config('kubelet')
     set_state('kubernetes-worker.cloud.ready')
     set_state('kubernetes-worker.restart-needed')  # force restart
-
-
-@when('kubernetes-worker.cloud.ready',
-      'endpoint.openstack.ready.changed')
-def update_openstack():
-    remove_state('kubernetes-worker.cloud.ready')
-    remove_state('endpoint.openstack.ready.changed')
 
 
 def get_first_mount(mount_relation):
