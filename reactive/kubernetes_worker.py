@@ -425,7 +425,7 @@ def send_data():
     ]
 
     # Request a server cert with this information.
-    layer.tls_client.request_server_cert(common_name, sans,
+    layer.tls_client.request_server_cert(common_name, sorted(set(sans)),
                                          crt_path=server_crt_path,
                                          key_path=server_key_path)
 
