@@ -715,7 +715,8 @@ def configure_kubelet(dns, ingress_ip):
         # Add kubelet-extra-config. This needs to happen last so that it
         # overrides any config provided by the charm.
         kubelet_extra_config = hookenv.config('kubelet-extra-config')
-        kubelet_extra_config = yaml.load(kubelet_extra_config)
+        kubelet_extra_config = yaml.load(kubelet_extra_config,
+                                         Loader=yaml.FullLoader)
         merge_kubelet_extra_config(kubelet_config, kubelet_extra_config)
 
         # Render the file and configure Kubelet to use it
