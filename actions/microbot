@@ -20,6 +20,8 @@ import sys
 from charmhelpers.core.hookenv import action_get
 from charmhelpers.core.hookenv import action_set
 from charmhelpers.core.hookenv import unit_public_ip
+from charmhelpers.core.hookenv import config
+from charms.reactive import endpoint_from_flag
 from charms.templating.jinja2 import render
 from subprocess import call, check_output
 
@@ -59,8 +61,13 @@ if context['delete']:
                    'Failed removal of microbot service resource.'})
     sys.exit(0)
 
-# Creation request
+kube_control = endpoint_from_flag('kube-control.registry_location.available')
+if kube_control:
+    registry_location = kube_control.get_registry_location()
+    context['registry'] = registry_location
 
+# Creation request
+ETCD_PORT = config('management_port')
 render('microbot-example.yaml', '/root/cdk/addons/microbot.yaml',
        context)
 
