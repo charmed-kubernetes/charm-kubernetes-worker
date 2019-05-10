@@ -63,6 +63,10 @@ resources:
     type: file
     filename: cni.tgz
     description: CNI plugins for s390x
+  core:
+    type: file
+    filename: core.snap
+    description: core snap
   kubectl:
     type: file
     filename: kubectl.snap

@@ -190,7 +190,6 @@ def cleanup_pre_snap_services():
         "/etc/default/kube-default",
         "/etc/default/kubelet",
         "/etc/default/kube-proxy",
-        "/srv/kubernetes",
         "/usr/local/bin/kubectl",
         "/usr/local/bin/kubelet",
         "/usr/local/bin/kube-proxy",
@@ -213,6 +212,8 @@ def channel_changed():
 @when('kubernetes-worker.snaps.upgrade-specified')
 def install_snaps():
     channel = hookenv.config('channel')
+    hookenv.status_set('maintenance', 'Installing core snap')
+    snap.install('core')
     hookenv.status_set('maintenance', 'Installing kubectl snap')
     snap.install('kubectl', channel=channel, classic=True)
     hookenv.status_set('maintenance', 'Installing kubelet snap')
@@ -429,7 +430,7 @@ def send_data():
     ]
 
     # Request a server cert with this information.
-    layer.tls_client.request_server_cert(common_name, sans,
+    layer.tls_client.request_server_cert(common_name, sorted(set(sans)),
                                          crt_path=server_crt_path,
                                          key_path=server_key_path)
 
@@ -1098,6 +1099,8 @@ def request_integration():
         cloud = endpoint_from_flag('endpoint.aws.joined')
         cloud.tag_instance({
             'kubernetes.io/cluster/{}'.format(cluster_tag): 'owned',
+            'juju-io-cloud': 'ec2',
+            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.tag_instance_security_group({
             'kubernetes.io/cluster/{}'.format(cluster_tag): 'owned',
@@ -1110,12 +1113,16 @@ def request_integration():
         cloud = endpoint_from_flag('endpoint.gcp.joined')
         cloud.label_instance({
             'k8s-io-cluster-name': cluster_tag,
+            'juju-io-cloud': 'gce',
+            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.enable_object_storage_management()
     elif is_state('endpoint.azure.joined'):
         cloud = endpoint_from_flag('endpoint.azure.joined')
         cloud.tag_instance({
             'k8s-io-cluster-name': cluster_tag,
+            'juju-io-cloud': 'azure',
+            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.enable_object_storage_management()
     cloud.enable_instance_inspection()
@@ -1129,11 +1136,16 @@ def request_integration():
            'endpoint.openstack.joined',
            'endpoint.vsphere.joined',
            'endpoint.azure.joined')
+@when_any('kubernetes-worker.cloud.pending',
+          'kubernetes-worker.cloud.request-sent',
+          'kubernetes-worker.cloud.blocked',
+          'kubernetes-worker.cloud.ready')
 def clear_cloud_flags():
     remove_state('kubernetes-worker.cloud.pending')
     remove_state('kubernetes-worker.cloud.request-sent')
     remove_state('kubernetes-worker.cloud.blocked')
     remove_state('kubernetes-worker.cloud.ready')
+    set_state('kubernetes-worker.restart-needed')  # force restart
 
 
 @when_any('endpoint.aws.ready',
