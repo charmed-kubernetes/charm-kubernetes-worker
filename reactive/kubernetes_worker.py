@@ -658,6 +658,13 @@ def configure_kubelet(dns, ingress_ip):
     kubelet_opts['logtostderr'] = 'true'
     kubelet_opts['node-ip'] = ingress_ip
 
+    # NB: lp:1828853 will make this a generic k8s config option
+    registry = 'image-registry.canonical.com:5000/cdk'
+    if not registry:
+        registry = 'k8s.gcr.io'
+    kubelet_opts['pod-infra-container-image'] = '{}/pause-{}:3.1'.format(
+        registry, arch())
+
     kubelet_cloud_config_path = cloud_config_path('kubelet')
     if is_state('endpoint.aws.ready'):
         kubelet_opts['cloud-provider'] = 'aws'
@@ -791,26 +798,35 @@ def render_and_launch_ingress():
     context['defaultbackend_image'] = config.get('default-backend-image')
     if (context['defaultbackend_image'] == "" or
        context['defaultbackend_image'] == "auto"):
+        # NB: lp:1828853 will make this a generic k8s config option
+        registry = 'image-registry.canonical.com:5000/cdk'
+        if not registry:
+            registry = 'k8s.gcr.io'
         if context['arch'] == 's390x':
             context['defaultbackend_image'] = \
-                "k8s.gcr.io/defaultbackend-s390x:1.4"
+                "{}/defaultbackend-s390x:1.4".format(registry)
         elif context['arch'] == 'arm64':
             context['defaultbackend_image'] = \
-                "k8s.gcr.io/defaultbackend-arm64:1.5"
+                "{}/defaultbackend-arm64:1.5".format(registry)
         else:
             context['defaultbackend_image'] = \
-                "k8s.gcr.io/defaultbackend-amd64:1.5"
+                "{}/defaultbackend-amd64:1.5".format(registry)
 
     # Render the ingress daemon set controller manifest
     context['ssl_chain_completion'] = config.get(
         'ingress-ssl-chain-completion')
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.22.0',  # noqa
-                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0',  # noqa
-                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
-                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
-                  }
+        # NB: lp:1828853 will make this a generic k8s config option
+        registry = 'image-registry.canonical.com:5000/cdk'
+        if not registry:
+            registry = 'quay.io'
+        images = {
+            'amd64': '{}/kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.22.0'.format(registry),  # noqa
+            'arm64': '{}/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0'.format(registry),  # noqa
+            's390x': '{}/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0'.format(registry),  # noqa
+            'ppc64el': '{}/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0'.format(registry),  # noqa
+        }
         context['ingress_image'] = images.get(context['arch'], images['amd64'])
     if get_version('kubelet') < (1, 9):
         context['daemonset_api_version'] = 'extensions/v1beta1'
