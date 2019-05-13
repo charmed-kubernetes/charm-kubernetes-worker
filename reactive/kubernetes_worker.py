@@ -191,7 +191,6 @@ def cleanup_pre_snap_services():
         "/etc/default/kube-default",
         "/etc/default/kubelet",
         "/etc/default/kube-proxy",
-        "/srv/kubernetes",
         "/usr/local/bin/kubectl",
         "/usr/local/bin/kubelet",
         "/usr/local/bin/kube-proxy",
