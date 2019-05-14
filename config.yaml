@@ -34,7 +34,7 @@ options:
       Space separated list of flags and key=value pairs that will be passed as arguments to
       kubelet. For example a value like this:
         runtime-config=batch/v2alpha1=true profiling=true
-      will result in kube-apiserver being run with the following options:
+      will result in kubelet being run with the following options:
         --runtime-config=batch/v2alpha1=true --profiling=true
       Note: As of Kubernetes 1.10.x, many of Kubelet's args have been deprecated, and can
       be set with kubelet-extra-config instead.
