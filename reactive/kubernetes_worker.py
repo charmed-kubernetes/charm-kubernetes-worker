@@ -1133,8 +1133,6 @@ def request_integration():
         cloud = endpoint_from_flag('endpoint.aws.joined')
         cloud.tag_instance({
             'kubernetes.io/cluster/{}'.format(cluster_tag): 'owned',
-            'juju-io-cloud': 'ec2',
-            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.tag_instance_security_group({
             'kubernetes.io/cluster/{}'.format(cluster_tag): 'owned',
@@ -1147,16 +1145,12 @@ def request_integration():
         cloud = endpoint_from_flag('endpoint.gcp.joined')
         cloud.label_instance({
             'k8s-io-cluster-name': cluster_tag,
-            'juju-io-cloud': 'gce',
-            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.enable_object_storage_management()
     elif is_state('endpoint.azure.joined'):
         cloud = endpoint_from_flag('endpoint.azure.joined')
         cloud.tag_instance({
             'k8s-io-cluster-name': cluster_tag,
-            'juju-io-cloud': 'azure',
-            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.enable_object_storage_management()
     cloud.enable_instance_inspection()
