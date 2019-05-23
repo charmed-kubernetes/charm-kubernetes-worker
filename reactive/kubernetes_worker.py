@@ -75,6 +75,7 @@ gcp_creds_env_key = 'GOOGLE_APPLICATION_CREDENTIALS'
 snap_resources = ['kubectl', 'kubelet', 'kube-proxy']
 checksum_prefix = 'kubernetes-worker.resource-checksums.'
 configure_prefix = 'kubernetes-worker.prev_args.'
+cpu_manager_state = "/var/lib/kubelet/cpu_manager_state"
 
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 db = unitdata.kv()
@@ -561,6 +562,11 @@ def apply_node_labels():
           'config.changed.proxy-extra-args',
           'config.changed.kubelet-extra-config')
 def config_changed_requires_restart():
+    # LP bug #1826833, always delete the state file when extra config changes
+    # since CPU manager doesn’t support offlining and onlining of CPUs at runtime.
+    if os.path.isfile(cpu_manager_state):
+        hookenv.log("Removing file: " + cpu_manager_state)
+        os.remove(cpu_manager_state)
     set_state('kubernetes-worker.restart-needed')
 
 
