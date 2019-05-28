@@ -20,7 +20,6 @@ import sys
 from charmhelpers.core.hookenv import action_get
 from charmhelpers.core.hookenv import action_set
 from charmhelpers.core.hookenv import unit_public_ip
-from charmhelpers.core.hookenv import config
 from charms.reactive import endpoint_from_flag
 from charms.templating.jinja2 import render
 from subprocess import call, check_output
@@ -67,7 +66,6 @@ if kube_control:
     context['registry'] = registry_location
 
 # Creation request
-ETCD_PORT = config('management_port')
 render('microbot-example.yaml', '/root/cdk/addons/microbot.yaml',
        context)
 
