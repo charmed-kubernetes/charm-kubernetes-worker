@@ -18,7 +18,7 @@ spec:
         app: microbot
     spec:
       containers:
-      - image: {{ registry ~ "/" }}cdkbot/microbot-{{ arch }}:latest
+      - image: {{ registry|default("docker.io") }}/cdkbot/microbot-{{ arch }}:latest
         imagePullPolicy: ""
         name: microbot
         ports:
