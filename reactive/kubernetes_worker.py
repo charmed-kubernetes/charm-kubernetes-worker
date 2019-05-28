@@ -213,6 +213,8 @@ def channel_changed():
 @when('kubernetes-worker.snaps.upgrade-specified')
 def install_snaps():
     channel = hookenv.config('channel')
+    hookenv.status_set('maintenance', 'Installing core snap')
+    snap.install('core')
     hookenv.status_set('maintenance', 'Installing kubectl snap')
     snap.install('kubectl', channel=channel, classic=True)
     hookenv.status_set('maintenance', 'Installing kubelet snap')
@@ -715,7 +717,7 @@ def configure_kubelet(dns, ingress_ip):
         # Add kubelet-extra-config. This needs to happen last so that it
         # overrides any config provided by the charm.
         kubelet_extra_config = hookenv.config('kubelet-extra-config')
-        kubelet_extra_config = yaml.load(kubelet_extra_config)
+        kubelet_extra_config = yaml.safe_load(kubelet_extra_config)
         merge_kubelet_extra_config(kubelet_config, kubelet_extra_config)
 
         # Render the file and configure Kubelet to use it
