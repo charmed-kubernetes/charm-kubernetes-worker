@@ -756,9 +756,7 @@ def configure_kubelet(dns, ingress_ip):
             'kube-control.registry_location.available')
         registry_location = kube_control.get_registry_location().rstrip('/')
         kubelet_opts['pod-infra-container-image'] = \
-            '{}/pause-amd64:3.1'.format(registry_location)
-        kubelet_opts['default-backend-image'] = \
-            '{}/defaultbackend:1.4'.format(registry_location)
+            '{}/pause-{}:3.1'.format(registry_location, arch())
 
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
@@ -797,20 +795,22 @@ def render_and_launch_ingress():
     addon_path = '/root/cdk/addons/{}'
     context['juju_application'] = hookenv.service_name()
 
-    registry_location = ""
-
+    # image-registry config comes from the kuberentes-master charm,
+    # which is passed to the workers on the kube-control interface
     if is_state('kube-control.registry_location.available'):
         kube_control = endpoint_from_flag(
             'kube-control.registry_location.available')
         registry_location = kube_control.get_registry_location().rstrip('/')
+    else:
+        registry_location = ""
 
     context['defaultbackend_image'] = config.get('default-backend-image')
     if (context['defaultbackend_image'] == "" or
        context['defaultbackend_image'] == "auto"):
-        if not registry_location:
-            backend_registry = 'k8s.gcr.io'
-        else:
+        if registry_location:
             backend_registry = registry_location
+        else:
+            backend_registry = 'k8s.gcr.io'
         if context['arch'] == 's390x':
             context['defaultbackend_image'] = \
                 "{}/defaultbackend-s390x:1.4".format(backend_registry)
@@ -826,19 +826,11 @@ def render_and_launch_ingress():
         'ingress-ssl-chain-completion')
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        # possibly smash the base of the images to the registry defined
-        # via the image-registry config on the kuberentes-master charm,
-        # which is passed to the workers on the kube-control interface
-        if not registry_location:
-            nginx_registry = 'quay.io'
-        else:
+        if registry_location:
             nginx_registry = registry_location
-
-        if is_state('kube-control.registry_location.available'):
-            kube_control = endpoint_from_flag(
-                'kube-control.registry_location.available')
-            registry_location = kube_control.get_registry_location()
-        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller:0.22.0',  # noqa
+        else:
+            nginx_registry = 'quay.io'
+        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.22.0',  # noqa
                   'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0',  # noqa
                   's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
                   'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
