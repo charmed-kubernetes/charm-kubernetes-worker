@@ -25,6 +25,7 @@ from base64 import b64encode
 from charmhelpers.core.hookenv import action_get
 from charmhelpers.core.hookenv import action_set
 from charms.templating.jinja2 import render
+from charms.reactive import endpoint_from_flag
 from subprocess import call, check_output
 
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
@@ -78,6 +79,11 @@ if deletion:
         action_set({'registry-delete': 'failure'})
 
     sys.exit(0)
+
+kube_control = endpoint_from_flag('kube-control.registry_location.available')
+if kube_control:
+    registry_location = kube_control.get_registry_location()
+    context['registry'] = registry_location
 
 # Creation request
 render('registry.yaml', '/root/cdk/addons/registry.yaml',
