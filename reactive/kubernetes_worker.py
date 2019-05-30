@@ -751,6 +751,10 @@ def configure_kubelet(dns, ingress_ip):
     if get_version('kubelet') >= (1, 11):
         kubelet_opts['dynamic-config-dir'] = '/root/cdk/kubelet/dynamic-config'
 
+    # An image-registry can be configured on the k8s-master, which is passed to
+    # workers via the kube-control relation. When present, make sure kubelet
+    # gets the pause container from the configured registry. When not present,
+    # kubelet uses a default image location (currently k8s.gcr.io/pause:3.1).
     if is_state('kube-control.registry_location.available'):
         kube_control = endpoint_from_flag(
             'kube-control.registry_location.available')
@@ -795,8 +799,9 @@ def render_and_launch_ingress():
     addon_path = '/root/cdk/addons/{}'
     context['juju_application'] = hookenv.service_name()
 
-    # image-registry config comes from the kuberentes-master charm,
-    # which is passed to the workers on the kube-control interface
+    # An image-registry can be configured on the k8s-master, which is passed to
+    # workers via the kube-control relation. When present, make sure workers
+    # get the ingress containers from the configured registry.
     if is_state('kube-control.registry_location.available'):
         kube_control = endpoint_from_flag(
             'kube-control.registry_location.available')
@@ -1284,6 +1289,9 @@ def nfs_storage(mount):
     if not mount_data:
         return
 
+    # If an image-registry has been configured on the k8s-master, it will be
+    # set on the kube-control relation. Ensure we use it to define the nfs
+    # image location if present.
     if is_state('kube-control.registry_location.available'):
         kube_control = endpoint_from_flag(
             'kube-control.registry_location.available')
