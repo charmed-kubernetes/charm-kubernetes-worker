@@ -75,6 +75,7 @@ gcp_creds_env_key = 'GOOGLE_APPLICATION_CREDENTIALS'
 snap_resources = ['kubectl', 'kubelet', 'kube-proxy']
 checksum_prefix = 'kubernetes-worker.resource-checksums.'
 configure_prefix = 'kubernetes-worker.prev_args.'
+cpu_manager_state = "/var/lib/kubelet/cpu_manager_state"
 
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 db = unitdata.kv()
@@ -576,6 +577,11 @@ def apply_node_labels():
           'config.changed.proxy-extra-args',
           'config.changed.kubelet-extra-config')
 def config_changed_requires_restart():
+    # LP bug #1826833, always delete the state file when extra config changes
+    # since CPU manager doesn’t support offlining and onlining of CPUs at runtime.
+    if os.path.isfile(cpu_manager_state):
+        hookenv.log("Removing file: " + cpu_manager_state)
+        os.remove(cpu_manager_state)
     set_state('kubernetes-worker.restart-needed')
 
 
@@ -692,7 +698,7 @@ def configure_kubelet(dns, ingress_ip):
         # Add kubelet-extra-config. This needs to happen last so that it
         # overrides any config provided by the charm.
         kubelet_extra_config = hookenv.config('kubelet-extra-config')
-        kubelet_extra_config = yaml.load(kubelet_extra_config)
+        kubelet_extra_config = yaml.safe_load(kubelet_extra_config)
         merge_kubelet_extra_config(kubelet_config, kubelet_extra_config)
 
         # Render the file and configure Kubelet to use it
@@ -725,6 +731,17 @@ def configure_kubelet(dns, ingress_ip):
 
     if get_version('kubelet') >= (1, 11):
         kubelet_opts['dynamic-config-dir'] = '/root/cdk/kubelet/dynamic-config'
+
+    # An image-registry can be configured on the k8s-master, which is passed to
+    # workers via the kube-control relation. When present, make sure kubelet
+    # gets the pause container from the configured registry. When not present,
+    # kubelet uses a default image location (currently k8s.gcr.io/pause:3.1).
+    if is_state('kube-control.registry_location.available'):
+        kube_control = endpoint_from_flag(
+            'kube-control.registry_location.available')
+        registry_location = kube_control.get_registry_location().rstrip('/')
+        kubelet_opts['pod-infra-container-image'] = \
+            '{}/pause-{}:3.1'.format(registry_location, arch())
 
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
@@ -763,30 +780,51 @@ def render_and_launch_ingress():
     addon_path = '/root/cdk/addons/{}'
     context['juju_application'] = hookenv.service_name()
 
+    # An image-registry can be configured on the k8s-master, which is passed to
+    # workers via the kube-control relation. When present, make sure workers
+    # get the ingress containers from the configured registry.
+    if is_state('kube-control.registry_location.available'):
+        kube_control = endpoint_from_flag(
+            'kube-control.registry_location.available')
+        registry_location = kube_control.get_registry_location().rstrip('/')
+    else:
+        registry_location = ""
+
     context['defaultbackend_image'] = config.get('default-backend-image')
     if (context['defaultbackend_image'] == "" or
        context['defaultbackend_image'] == "auto"):
+        if registry_location:
+            backend_registry = registry_location
+        else:
+            backend_registry = 'k8s.gcr.io'
         if context['arch'] == 's390x':
             context['defaultbackend_image'] = \
-                "k8s.gcr.io/defaultbackend-s390x:1.4"
+                "{}/defaultbackend-s390x:1.4".format(backend_registry)
         elif context['arch'] == 'arm64':
             context['defaultbackend_image'] = \
-                "k8s.gcr.io/defaultbackend-arm64:1.5"
+                "{}/defaultbackend-arm64:1.5".format(backend_registry)
         else:
             context['defaultbackend_image'] = \
-                "k8s.gcr.io/defaultbackend-amd64:1.5"
+                "{}/defaultbackend-amd64:1.5".format(backend_registry)
 
     # Render the ingress daemon set controller manifest
     context['ssl_chain_completion'] = config.get(
         'ingress-ssl-chain-completion')
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        images = {'amd64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.22.0',  # noqa
-                  'arm64': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0',  # noqa
-                  's390x': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
-                  'ppc64el': 'quay.io/kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
+        if registry_location:
+            nginx_registry = registry_location
+        else:
+            nginx_registry = 'quay.io'
+        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.22.0',  # noqa
+                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0',  # noqa
+                  's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
+                  'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
                  }
-        context['ingress_image'] = images.get(context['arch'], images['amd64'])
+        context['ingress_image'] = '{}/{}'.format(nginx_registry,
+                                                  images.get(context['arch'],
+                                                             images['amd64']))
+
     if get_version('kubelet') < (1, 9):
         context['daemonset_api_version'] = 'extensions/v1beta1'
     else:
@@ -1221,6 +1259,15 @@ def nfs_storage(mount):
     if not mount_data:
         return
 
+    # If an image-registry has been configured on the k8s-master, it will be
+    # set on the kube-control relation. Ensure we use it to define the nfs
+    # image location if present.
+    if is_state('kube-control.registry_location.available'):
+        kube_control = endpoint_from_flag(
+            'kube-control.registry_location.available')
+        registry_location = kube_control.get_registry_location()
+        mount_data['registry'] = registry_location
+
     addon_path = '/root/cdk/addons/{}'
     # Render the NFS deployment
     manifest = addon_path.format('nfs-provisioner.yaml')
@@ -1234,3 +1281,14 @@ def nfs_storage(mount):
         return
 
     set_state('nfs.configured')
+
+
+@when('kube-control.registry_location.available')
+def update_registry_location():
+    kube_control = endpoint_from_flag(
+        'kube-control.registry_location.available')
+    registry_location = kube_control.get_registry_location()
+
+    if data_changed('registry-location', registry_location):
+        remove_state('nfs.configured')
+        remove_state('kubernetes-worker.ingress.available')
