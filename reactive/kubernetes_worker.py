@@ -1327,7 +1327,7 @@ def get_registry_location():
         'kube-control.registry_location.available')
     if kube_control:
         rel_registry = kube_control.get_registry_location()
-        registry = rel_registry.rstip('/') if rel_registry else ""
+        registry = rel_registry.rstrip('/') if rel_registry else ""
     else:
         registry = ""
 
