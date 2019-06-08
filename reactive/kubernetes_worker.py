@@ -757,14 +757,11 @@ def configure_kubelet(dns, ingress_ip):
     if get_version('kubelet') >= (1, 11):
         kubelet_opts['dynamic-config-dir'] = '/root/cdk/kubelet/dynamic-config'
 
-    # An image-registry can be configured on the k8s-master, which is passed to
-    # workers via the kube-control relation. When present, make sure kubelet
-    # gets the pause container from the configured registry. When not present,
-    # kubelet uses a default image location (currently k8s.gcr.io/pause:3.1).
-    if is_state('kube-control.registry_location.available'):
-        kube_control = endpoint_from_flag(
-            'kube-control.registry_location.available')
-        registry_location = kube_control.get_registry_location().rstrip('/')
+    # If present, ensure kubelet gets the pause container from the configured
+    # registry. When not present, kubelet uses a default image location
+    # (currently k8s.gcr.io/pause:3.1).
+    registry_location = get_registry_location()
+    if registry_location:
         kubelet_opts['pod-infra-container-image'] = \
             '{}/pause-{}:3.1'.format(registry_location, arch())
 
@@ -805,15 +802,9 @@ def render_and_launch_ingress():
     addon_path = '/root/cdk/addons/{}'
     context['juju_application'] = hookenv.service_name()
 
-    # An image-registry can be configured on the k8s-master, which is passed to
-    # workers via the kube-control relation. When present, make sure workers
-    # get the ingress containers from the configured registry.
-    if is_state('kube-control.registry_location.available'):
-        kube_control = endpoint_from_flag(
-            'kube-control.registry_location.available')
-        registry_location = kube_control.get_registry_location().rstrip('/')
-    else:
-        registry_location = ""
+    # If present, workers will get the ingress containers from the configured
+    # registry. Otherwise, we'll set an appropriate upstream image registry.
+    registry_location = get_registry_location()
 
     context['defaultbackend_image'] = config.get('default-backend-image')
     if (context['defaultbackend_image'] == "" or
@@ -1295,13 +1286,9 @@ def nfs_storage(mount):
     if not mount_data:
         return
 
-    # If an image-registry has been configured on the k8s-master, it will be
-    # set on the kube-control relation. Ensure we use it to define the nfs
-    # image location if present.
-    if is_state('kube-control.registry_location.available'):
-        kube_control = endpoint_from_flag(
-            'kube-control.registry_location.available')
-        registry_location = kube_control.get_registry_location()
+    # If present, use the configured registry to define the nfs image location.
+    registry_location = get_registry_location()
+    if registry_location:
         mount_data['registry'] = registry_location
 
     addon_path = '/root/cdk/addons/{}'
@@ -1321,10 +1308,27 @@ def nfs_storage(mount):
 
 @when('kube-control.registry_location.available')
 def update_registry_location():
-    kube_control = endpoint_from_flag(
-        'kube-control.registry_location.available')
-    registry_location = kube_control.get_registry_location()
+    registry_location = get_registry_location()
 
     if data_changed('registry-location', registry_location):
         remove_state('nfs.configured')
         remove_state('kubernetes-worker.ingress.available')
+
+
+def get_registry_location():
+    """Get the image registry from the kube-control relation.
+
+    If an image-registry has been configured on the k8s-master, it will be set
+    set on the kube-control relation. This function returns that value stripped
+    of any trailing slash. If the relation or registry location are missing,
+    this returns an empty string.
+    """
+    kube_control = endpoint_from_flag(
+        'kube-control.registry_location.available')
+    if kube_control:
+        rel_registry = kube_control.get_registry_location()
+        registry = rel_registry.rstrip('/') if rel_registry else ""
+    else:
+        registry = ""
+
+    return registry
