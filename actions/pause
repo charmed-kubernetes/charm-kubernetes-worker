@@ -14,7 +14,7 @@ from charmhelpers.core.hookenv import (
     status_set,
 )
 
-# make sure the kubectl snap can be found
+# Make sure the kubectl snap can be found
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 
 drain_args = ['--ignore-daemonsets']
