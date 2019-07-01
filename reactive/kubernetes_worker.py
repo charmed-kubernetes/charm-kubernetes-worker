@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
+import ipaddress
 import os
 import re
 import shutil
@@ -885,8 +885,18 @@ def get_kube_api_servers(kube_api):
     # Iterate over every service from the relation object.
     for service in kube_api.services():
         for unit in service['hosts']:
-            hosts.append('https://{0}:{1}'.format(unit['hostname'],
-                                                  unit['port']))
+            try:
+                if ipaddress.ip_address(unit['hostname']).version == 6:
+                    hosts.append('https://[{0}]:{1}'.format(unit['hostname'],
+                                                            unit['port']))
+                else:
+                    hosts.append('https://{0}:{1}'.format(unit['hostname'],
+                                                          unit['port']))
+            except ValueError:
+                # looks like a real DNS name
+                hosts.append('https://{0}:{1}'.format(unit['hostname'],
+                                                      unit['port']))
+
     return hosts
 
 
