@@ -7,16 +7,17 @@ worker applications: kubelet, and kube-proxy.
 
 In order for this charm to be useful, it should be deployed with its companion
 charm [kubernetes-master](https://jujucharms.com/u/containers/kubernetes-master)
-and linked with an SDN-Plugin.
+and linked with an SDN-Plugin and a container runtime such as
+[containerd](https://jaas.ai/u/containers/containerd).
 
 This charm has also been bundled up for your convenience so you can skip the
 above steps, and deploy it with a single command:
 
 ```shell
-juju deploy canonical-kubernetes
+juju deploy charmed-kubernetes
 ```
 
-For more information about [Canonical Kubernetes](https://jujucharms.com/canonical-kubernetes)
+For more information about [Charmed Kubernetes](https://jaas.ai/charmed-kubernetes)
 consult the bundle `README.md` file.
 
 ## Scale out
@@ -101,11 +102,16 @@ Learn more about the `docker-registry` capabilities at [docker-registry][].
 
 ## Known Limitations
 
-Kubernetes workers currently only support 'phaux' HA scenarios. Even when configured with an HA cluster string, they will only ever contact the first unit in the cluster map. To enable a proper HA story, kubernetes-worker units are encouraged to proxy through a [kubeapi-load-balancer](https://jujucharms.com/kubeapi-load-balancer)
-application. This enables a HA deployment without the need to
-re-render configuration and disrupt the worker services.
+Kubernetes workers will try to spread load across any presented IP addresses, but
+a single worker will only ever try to connect to a single IP. If HA is desired, a
+solution such as [HACluster](https://jaas.ai/hacluster) is recommended. HACluster
+can be related to the [kubeapi-load-balancer](https://jaas.ai/kubeapi-load-balancer)
+or directly to the [kubernetes-master](https://jaas.ai/kubernetes-master) if no
+load balancing is necessary. If you have your own external virtual IP or load
+balancer, set the IP address in the configuration parameter named
+loadbalancer-ips on the master charm.
 
-External access to pods must be performed through a [Kubernetes
+External access to pods can be performed through a [Kubernetes
 Ingress Resource](http://kubernetes.io/docs/user-guide/ingress/).
 
 When using NodePort type networking, there is no automation in exposing the
