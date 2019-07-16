@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: default-http-backend-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+    cdk-restart-on-ca-change: "true"
   namespace: ingress-nginx-{{ juju_application }}
 spec:
   replicas: 1

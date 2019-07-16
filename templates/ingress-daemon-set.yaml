@@ -200,6 +200,7 @@ metadata:
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     juju-application: nginx-ingress-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+    cdk-restart-on-ca-change: "true"
 spec:
   selector:
     matchLabels:
