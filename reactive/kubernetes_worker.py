@@ -585,10 +585,12 @@ def config_changed_requires_restart():
     set_state('kubernetes-worker.restart-needed')
 
 
-@when('tls_client.certs.changed')
+@when_any('tls_client.certs.changed',
+          'tls_client.ca.written')
 def restart_for_certs():
     set_state('kubernetes-worker.restart-needed')
     remove_state('tls_client.certs.changed')
+    remove_state('tls_client.ca.written')
 
 
 def create_config(server, creds):
