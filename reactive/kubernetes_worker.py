@@ -421,7 +421,7 @@ def send_data():
     # Use the public ip of this unit as the Common Name for the certificate.
     common_name = hookenv.unit_public_ip()
 
-    ingress_ip = get_ingress_address(kube_control.relation_name)
+    ingress_ip = get_ingress_address(kube_control.endpoint_name)
 
     # Create SANs that the tls layer will add to the server cert.
     sans = [
@@ -494,7 +494,7 @@ def start_worker():
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    ingress_ip = get_ingress_address(kube_control.relation_name)
+    ingress_ip = get_ingress_address(kube_control.endpoint_name)
     cluster_cidr = cni.get_config()['cidr']
 
     if cluster_cidr is None:
