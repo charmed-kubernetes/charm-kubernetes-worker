@@ -134,9 +134,3 @@ follow the same steps inversely.
 ```bash
 juju run --application kubernetes-worker close-port 30510
 ```
-
-## LXD
-
-The [LXD profile](https://github.com/charmed-kubernetes/bundle/wiki/Deploying-on-LXD) included in this charm uses keys which are not allowed in the current [juju version](https://docs.jujucharms.com/lxd-cloud-advanced#charms-and-lxd-profiles) this means that you are required to supply `--force` to your `deploy` and `upgrade-charm` commands.
-
-
