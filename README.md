@@ -99,6 +99,10 @@ Learn more about the `docker-registry` capabilities at [docker-registry][].
 
 [docker-registry]: https://jujucharms.com/u/containers/docker-registry
 
+# Deploying on LXD
+
+If you wish to run on LXD with GPU please see [deploying on lxd](https://github.com/charmed-kubernetes/bundle/wiki/Deploying-on-LXD#privileged-containers) as you will need to edit a line of the LXD profile which deployed with this charm.
+
 ## Known Limitations
 
 Kubernetes workers currently only support 'phaux' HA scenarios. Even when configured with an HA cluster string, they will only ever contact the first unit in the cluster map. To enable a proper HA story, kubernetes-worker units are encouraged to proxy through a [kubeapi-load-balancer](https://jujucharms.com/kubeapi-load-balancer)
