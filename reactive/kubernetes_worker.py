@@ -53,7 +53,6 @@ from charms.layer.kubernetes_common import configure_kubernetes_service
 from charms.layer.kubernetes_common import parse_extra_args
 from charms.layer.kubernetes_common import cloud_config_path
 from charms.layer.kubernetes_common import write_gcp_snap_config
-from charms.layer.kubernetes_common import write_openstack_snap_config
 from charms.layer.kubernetes_common import write_azure_snap_config
 from charms.layer.kubernetes_common import kubeproxyconfig_path
 from charms.layer.kubernetes_common import configure_kube_proxy
@@ -648,8 +647,7 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['cloud-provider'] = 'gce'
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
     elif is_state('endpoint.openstack.ready'):
-        kubelet_opts['cloud-provider'] = 'openstack'
-        kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
+        kubelet_opts['cloud-provider'] = 'external'
     elif is_state('endpoint.vsphere.joined'):
         # vsphere just needs to be joined on the worker (vs 'ready')
         kubelet_opts['cloud-provider'] = 'vsphere'
@@ -1130,8 +1128,6 @@ def request_integration():
         cloud = endpoint_from_flag('endpoint.aws.joined')
         cloud.tag_instance({
             'kubernetes.io/cluster/{}'.format(cluster_tag): 'owned',
-            'juju-io-cloud': 'ec2',
-            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.tag_instance_security_group({
             'kubernetes.io/cluster/{}'.format(cluster_tag): 'owned',
@@ -1144,16 +1140,12 @@ def request_integration():
         cloud = endpoint_from_flag('endpoint.gcp.joined')
         cloud.label_instance({
             'k8s-io-cluster-name': cluster_tag,
-            'juju-io-cloud': 'gce',
-            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.enable_object_storage_management()
     elif is_state('endpoint.azure.joined'):
         cloud = endpoint_from_flag('endpoint.azure.joined')
         cloud.tag_instance({
             'k8s-io-cluster-name': cluster_tag,
-            'juju-io-cloud': 'azure',
-            'juju-io-az': os.environ.get('JUJU_AVAILABILITY_ZONE', ''),
         })
         cloud.enable_object_storage_management()
     cloud.enable_instance_inspection()
@@ -1190,19 +1182,10 @@ def cloud_ready():
     remove_state('kubernetes-worker.cloud.pending')
     if is_state('endpoint.gcp.ready'):
         write_gcp_snap_config('kubelet')
-    elif is_state('endpoint.openstack.ready'):
-        write_openstack_snap_config('kubelet')
     elif is_state('endpoint.azure.ready'):
         write_azure_snap_config('kubelet')
     set_state('kubernetes-worker.cloud.ready')
     set_state('kubernetes-worker.restart-needed')  # force restart
-
-
-@when('kubernetes-worker.cloud.ready',
-      'endpoint.openstack.ready.changed')
-def update_openstack():
-    remove_state('kubernetes-worker.cloud.ready')
-    remove_state('endpoint.openstack.ready.changed')
 
 
 def get_first_mount(mount_relation):
