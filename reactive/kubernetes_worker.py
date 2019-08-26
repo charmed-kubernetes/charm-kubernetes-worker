@@ -1257,7 +1257,7 @@ def nfs_storage(mount):
 @when('kube-control.registry_location.available')
 def update_registry_location():
     """Handle changes to the container image registry.
-    
+
     Monitor the image registry location. If it changes, manage flags to ensure
     our image-related handlers will be invoked with an accurate registry.
     """
