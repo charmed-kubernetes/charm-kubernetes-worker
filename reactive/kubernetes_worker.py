@@ -1256,11 +1256,18 @@ def nfs_storage(mount):
 
 @when('kube-control.registry_location.available')
 def update_registry_location():
+    """Handle changes to the container image registry.
+    
+    Monitor the image registry location. If it changes, manage flags to ensure
+    our image-related handlers will be invoked with an accurate registry.
+    """
     registry_location = get_registry_location()
 
     if data_changed('registry-location', registry_location):
-        remove_state('nfs.configured')
+        remove_state('kubernetes-worker.config.created')
         remove_state('kubernetes-worker.ingress.available')
+        remove_state('nfs.configured')
+        set_state('kubernetes-worker.restart-needed')
 
 
 def get_registry_location():
