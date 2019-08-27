@@ -815,10 +815,16 @@ def render_and_launch_ingress():
                                                   images.get(context['arch'],
                                                              images['amd64']))
 
-    if get_version('kubelet') < (1, 9):
+    kubelet_version = get_version('kubelet')
+    if kubelet_version < (1, 9):
         context['daemonset_api_version'] = 'extensions/v1beta1'
-    else:
+        context['deployment_api_version'] = 'extensions/v1beta1'
+    elif kubelet_version < (1, 16):
         context['daemonset_api_version'] = 'apps/v1beta2'
+        context['deployment_api_version'] = 'extensions/v1beta1'
+    else:
+        context['daemonset_api_version'] = 'apps/v1'
+        context['deployment_api_version'] = 'apps/v1'
     manifest = addon_path.format('ingress-daemon-set.yaml')
     render('ingress-daemon-set.yaml', manifest, context)
     hookenv.log('Creating the ingress daemon set.')
