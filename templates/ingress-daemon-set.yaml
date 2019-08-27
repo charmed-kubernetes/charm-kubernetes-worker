@@ -9,7 +9,7 @@ metadata:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: nginx-configuration-{{ juju_application }}
+  name: nginx-configuration
   namespace: ingress-nginx-{{ juju_application }}
   labels:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
@@ -20,7 +20,7 @@ metadata:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: tcp-services-{{ juju_application }}
+  name: tcp-services
   namespace: ingress-nginx-{{ juju_application }}
   labels:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
@@ -31,7 +31,7 @@ metadata:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: udp-services-{{ juju_application }}
+  name: udp-services
   namespace: ingress-nginx-{{ juju_application }}
   labels:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
@@ -228,8 +228,8 @@ spec:
           args:
             - /nginx-ingress-controller
             - --configmap=$(POD_NAMESPACE)/nginx-configuration
-            - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services-{{ juju_application }}
-            - --udp-services-configmap=$(POD_NAMESPACE)/udp-services-{{ juju_application }}
+            - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services
+            - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
             - --annotations-prefix=nginx.ingress.kubernetes.io
             - --enable-ssl-chain-completion={{ ssl_chain_completion }}
           securityContext:
