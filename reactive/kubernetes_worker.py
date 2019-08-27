@@ -801,8 +801,8 @@ def render_and_launch_ingress():
     # Render the ingress daemon set controller manifest
     context['ssl_chain_completion'] = config.get(
         'ingress-ssl-chain-completion')
-    if config.get('ingress-enable-ssl-passthrough', False):
-        context['enable_ssl_passthrough'] = '- --enable-ssl-passthrough'
+    context['enable_ssl_passthrough'] = config.get(
+        'ingress-ssl-passthrough')
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
         if registry_location:
