@@ -232,6 +232,7 @@ spec:
             - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
             - --annotations-prefix=nginx.ingress.kubernetes.io
             - --enable-ssl-chain-completion={{ ssl_chain_completion }}
+            - --enable-ssl-passthrough={{ enable_ssl_passthrough }}
           securityContext:
             capabilities:
               drop:

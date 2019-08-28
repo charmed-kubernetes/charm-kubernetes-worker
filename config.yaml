@@ -38,6 +38,13 @@ options:
         --runtime-config=batch/v2alpha1=true --profiling=true
       Note: As of Kubernetes 1.10.x, many of Kubelet's args have been deprecated, and can
       be set with kubelet-extra-config instead.
+  ingress-ssl-passthrough:
+    type: boolean
+    default: false
+    description: |
+      Enable ssl passthrough on ingress server. This allows passing the ssl
+      connection through to the workloads and not terminating it at the ingress
+      controller.
   ingress-ssl-chain-completion:
     type: boolean
     default: false
