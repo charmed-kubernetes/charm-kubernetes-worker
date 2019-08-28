@@ -461,7 +461,7 @@ def watch_for_changes():
     container_runtime_nvidia = \
         container_runtime.get_config().get('nvidia_enabled')
 
-    if container_runtime_nvidia == 'true':
+    if container_runtime_nvidia:
         set_state('nvidia.ready')
     else:
         remove_state('nvidia.ready')
