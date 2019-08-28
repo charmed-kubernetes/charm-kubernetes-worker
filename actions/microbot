@@ -76,6 +76,6 @@ create_response = call(create_command)
 
 if create_response == 0:
     action_set({'address':
-               'microbot.{}.xip.io'.format(context['public_address'])})
+               'microbot.{}.nip.io'.format(context['public_address'])})
 else:
     action_set({'microbot-create': 'Failed microbot creation.'})
