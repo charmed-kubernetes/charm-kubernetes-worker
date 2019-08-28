@@ -54,7 +54,7 @@ metadata:
  name: microbot-ingress
 spec:
  rules:
-   - host: microbot.{{ public_address }}.xip.io
+   - host: microbot.{{ public_address }}.nip.io
      http:
        paths:
          - path: /
