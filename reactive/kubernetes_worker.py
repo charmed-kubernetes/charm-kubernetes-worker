@@ -756,7 +756,7 @@ def toggle_ingress_state():
 @when_any('config.changed.default-backend-image',
           'config.changed.ingress-ssl-chain-completion',
           'config.changed.nginx-image',
-          'config.changed.ingress-enable-ssl-passthrough')
+          'config.changed.ingress-ssl-passthrough')
 def reconfigure_ingress():
     remove_state('kubernetes-worker.ingress.available')
 
