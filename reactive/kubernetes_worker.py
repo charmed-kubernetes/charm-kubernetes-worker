@@ -809,8 +809,8 @@ def render_and_launch_ingress():
             nginx_registry = registry_location
         else:
             nginx_registry = 'quay.io'
-        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.22.0',  # noqa
-                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.22.0',  # noqa
+        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.25.1',  # noqa
+                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.25.1',  # noqa
                   's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
                   'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
                  }
