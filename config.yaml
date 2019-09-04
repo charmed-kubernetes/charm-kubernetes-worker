@@ -92,3 +92,11 @@ options:
 
       For more information about KubeletConfiguration, see upstream docs:
       https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/
+  ports-to-open:
+    default: "80,443"
+    type: string
+    description: |
+      Comma-separated list of ports to be opened on each worker node. Ports will
+      be opened using juju's open-port command. By default, 80 and 443 are opened
+      for ingress controller.
+
