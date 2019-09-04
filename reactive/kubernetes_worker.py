@@ -242,6 +242,35 @@ def shutdown():
     service_stop('snap.kube-proxy.daemon')
 
 
+@when_not('config.changed.ports-to-open')
+def open_close_ports_if_needed():
+    # 1) Check which ports are open and save to already_opened
+    # opened_ports return format: "icmp" or "80/tcp"
+    already_opened = set([p.split("/")[0] for p in hookenv.opened_ports()])
+    # 2) iterate over the list from ports-to-open and check if not present to alrady_opened
+    to_open = hookenv.config().get("ports-to-open")
+    if to_open is None:
+        to_open = ""
+    # Basic clean-up: remove any dups with set()
+    # clean-up string, breaking on , and replacing empty spaces
+    to_open_set = set([p.replace(" ","") for p in to_open.split(",")])
+    for p in to_open_set:
+        if not p.isdigit():
+            hookenv.log("[WARN] ports-to-open: port {} must have only digits, ignoring...".format(p))
+        if p not in already_opened:
+            try:
+                hookenv.open_port(p)
+            except Exception as e: # open_port may fail because port has been opened by another charm, for example; just log it
+                hookenv.log("[WARN] ports-to-open failed to open {}, could that be another charm or application holding it open?".format(p))
+        else:
+            already_opened.discard(p)
+    # 3) close all the remaining ports on already_opened
+    # since lp#1427770 is marked as Won't Fix, we can presume opened-ports
+    # will return only ports opened and managed by this charm.
+    for p in already_opened:
+        hookenv.close_port(p)
+
+
 @when('endpoint.container-runtime.available')
 @when_not('kubernetes-worker.cni-plugins.installed')
 def install_cni_plugins():
@@ -836,9 +865,12 @@ def render_and_launch_ingress():
     except CalledProcessError as e:
         hookenv.log(e)
         hookenv.log('Failed to create ingress controller. Will attempt again next update.')  # noqa
-        hookenv.close_port(80)
-        hookenv.close_port(443)
-        return
+        # Now we need to know that we've failed to setup ingress controllers
+        # since ports are opened via configuration. We should advise the user
+        # to try again or close the ports
+        if "80" in hookenv.config().get("ports-to-open") or \
+           "443" in hookenv.config().get("ports-to-open"):
+            hookenv.log("Ingress controller disabled but ports 80 or 443 are kept open on ports-to-open option")
 
     # Render the default http backend (404) deployment manifest
     # needs to happen after ingress-daemon-set since that sets up the namespace
@@ -850,13 +882,14 @@ def render_and_launch_ingress():
     except CalledProcessError as e:
         hookenv.log(e)
         hookenv.log('Failed to create default-http-backend. Will attempt again next update.')  # noqa
-        hookenv.close_port(80)
-        hookenv.close_port(443)
-        return
+        # Now we need to know that we've failed to setup ingress controllers
+        # since ports are opened via configuration. We should advise the user
+        # to try again or close the ports
+        if "80" in hookenv.config().get("ports-to-open") or \
+           "443" in hookenv.config().get("ports-to-open"):
+            hookenv.log("Ingress controller disabled but ports 80 or 443 are kept open on ports-to-open option")
 
     set_state('kubernetes-worker.ingress.available')
-    hookenv.open_port(80)
-    hookenv.open_port(443)
 
 
 @when('kubernetes-worker.config.created',
@@ -864,8 +897,10 @@ def render_and_launch_ingress():
 @when_not('kubernetes-worker.ingress.enabled')
 def disable_ingress():
     hookenv.log('Deleting the http backend and ingress.')
-    hookenv.close_port(80)
-    hookenv.close_port(443)
+    if "80" in hookenv.config().get("ports-to-open") or \
+       "443" in hookenv.config().get("ports-to-open"):
+        hookenv.log("Ingress controller disabled but ports 80 or 443 are kept open on ports-to-open option")
+
     try:
         kubectl('delete', '--ignore-not-found', '-f',
                 '/root/cdk/addons/default-http-backend.yaml')
