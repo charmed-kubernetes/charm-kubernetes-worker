@@ -258,6 +258,10 @@ def open_close_ports_if_needed():
         port = p
         if "/" in p:
             port = p.split("/")[0]
+            if p.split("/")[1] != "tcp" and p.split("/")[1] != "udp":
+                # Log is for unit test purposes
+                hookenv.log("[ERROR] open-ports have wrong port format on: {}. Only tcp or udp allowed as protocols on PORT/PROTOCOL".format(p))
+                raise Exception("[ERROR] open-ports have wrong port format on: {}. Only tcp or udp allowed as protocols on PORT/PROTOCOL".format(p))
         if not "-" in port:
             if port != "icmp" and not port.isdigit():
                 # Log is for unit test purposes
