@@ -92,7 +92,7 @@ options:
 
       For more information about KubeletConfiguration, see upstream docs:
       https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/
-  ports-to-open:
+  open-ports:
     default: "80/tcp,443/tcp"
     type: string
     description: |
