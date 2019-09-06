@@ -30,7 +30,7 @@ def test_open_close_ports_dup_in_config(mock_close_port,
     }
     # Should not call 80 but close 443
     open_close_ports_if_needed()
-    mock_open_port.assert_not_called()
+    mock_open_port.assert_called_with("443")
     mock_close_port.assert_called_with("icmp")
 
 
@@ -44,7 +44,10 @@ def test_open_close_ports_non_digits(mock_close_port,
     mock_config_get.return_value = {
         "open-ports": "80,error",
     }
-    open_close_ports_if_needed()
-    mock_log.assert_called_with("[WARN] open-ports: port error must have only digits, ignoring port...")
+    try:
+        open_close_ports_if_needed()
+    except: # We expect it to throw an exception here
+        pass
+    mock_log.assert_called_with("[ERROR] open-ports have wrong port format on: error. PORT should be a number and format: PORT[/PROTOCOL]")
         
         

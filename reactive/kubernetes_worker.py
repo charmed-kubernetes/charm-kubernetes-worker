@@ -244,29 +244,41 @@ def shutdown():
 
 @when_not('config.changed.open-ports')
 def open_close_ports_if_needed():
+
     # 1) Check which ports are open and save to already_opened
     # opened_ports return format: "icmp" or "80/tcp"
-    already_opened = set([p.split("/")[0] for p in hookenv.opened_ports()])
-    # 2) iterate over the list from open-ports and check if not present to alrady_opened
-    to_open = hookenv.config().get("open-ports","")
-    # Basic clean-up: remove any dups with set()
-    # clean-up string, breaking on , and replacing empty spaces
-    to_open_set = set(p.strip() for p in to_open.split(','))
-    for p in to_open_set:
-        if not p.isdigit():
-            hookenv.log("[WARN] open-ports: port {} must have only digits, ignoring port...".format(p))
-        if p not in already_opened:
-            try:
-                hookenv.open_port(p)
-            except Exception as e: # open_port may fail because port has been opened by another charm, for example; just log it
-                hookenv.log("[WARN] open-ports failed to open {}, could that be another charm or application holding it open?".format(p))
+    already_opened = hookenv.opened_ports()
+    to_open = set(p.strip() for p in hookenv.config().get("open-ports","").split(','))
+    # first need to check if to_open has ports on right format, which are:
+    # PORT --> PORT is a number or icmp
+    # PORT/PROTOCOL --> PROTOCOL can only be tcp or udp
+    # PORT_1-PORT_2 --> both port codes must be numbers
+    # PORT_1-PORT_2/PROTOCOL --> both port codes must be numbers and protocol tcp or udp
+    for p in to_open:
+        port = p
+        if "/" in p:
+            port = p.split("/")[0]
+        if not "-" in port:
+            if port != "icmp" and not port.isdigit():
+                # Log is for unit test purposes
+                hookenv.log("[ERROR] open-ports have wrong port format on: {}. PORT should be a number and format: PORT[/PROTOCOL]".format(p))
+                raise Exception("[ERROR] open-ports have wrong port format on: {}. PORT should be a number and format: PORT[/PROTOCOL]".format(p))
         else:
-            already_opened.discard(p)
-    # 3) close all the remaining ports on already_opened
-    # since lp#1427770 is marked as Won't Fix, we can presume opened-ports
-    # will return only ports opened and managed by this charm.
+            if port != "icmp" and not (port.split("-")[0].isdigit() and port.split("-")[1].isdigit()):
+                # Log is for unit test purposes
+                hookenv.log("[ERROR] open-ports have wrong port format on: {}. Port should be a number and format: PORT_1-PORT_2[/PROTOCOL]".format(p))
+                raise Exception("[ERROR] open-ports have wrong port format on: {}. Port should be a number and format: PORT_1-PORT_2[/PROTOCOL]".format(p))
+    # assuming all those ports will be closed
     for p in already_opened:
-        hookenv.close_port(p)
+        try:
+            hookenv.close_port(p)
+        except Exception as e: # open_port may fail because port has been opened by another charm, for example; just log it
+            hookenv.log("[WARN] close-port failed to close {}, could that be another charm or application holding it?".format(p))                    
+    for p in to_open:
+        try:
+            hookenv.open_port(p)
+        except Exception as e: # open_port may fail because port has been opened by another charm, for example; just log it
+            hookenv.log("[WARN] open-ports failed to open {}, could that be another charm or application holding it open?".format(p))
 
 
 @when('endpoint.container-runtime.available')
