@@ -76,6 +76,8 @@ checksum_prefix = 'kubernetes-worker.resource-checksums.'
 configure_prefix = 'kubernetes-worker.prev_args.'
 cpu_manager_state = "/var/lib/kubelet/cpu_manager_state"
 
+cohort_snaps = ['kubectl', 'kubelet', 'kube-proxy']
+
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 db = unitdata.kv()
 
@@ -225,6 +227,14 @@ def install_snaps():
     set_state('kubernetes-worker.restart-needed')
     remove_state('kubernetes-worker.snaps.upgrade-needed')
     remove_state('kubernetes-worker.snaps.upgrade-specified')
+
+
+@when('kubernetes-worker.snaps.installed',
+      'kube-control.cohort_keys.available')
+def join_or_update_cohorts():
+    kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
+    for snapname in cohort_snaps:
+        snap.join_cohort_snapshot(snapname, kube_control.cohort_keys[snapname])
 
 
 @hook('stop')
