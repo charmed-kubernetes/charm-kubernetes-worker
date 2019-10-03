@@ -64,7 +64,8 @@ from charms.layer.kubernetes_common import client_crt_path
 from charms.layer.kubernetes_common import client_key_path
 from charms.layer.kubernetes_common import get_unit_number
 
-from charms.layer.nagios import install_nagios_plugin, remove_nagios_plugin
+from charms.layer.nagios import install_nagios_plugin_from_text
+from charms.layer.nagios import remove_nagios_plugin
 
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
@@ -923,15 +924,14 @@ def initial_nrpe_config():
 def update_nrpe_config():
     services = ['snap.{}.daemon'.format(s) for s in worker_services]
     data = render('nagios_plugin.py', context={'node_name': get_node_name()})
-    plugin_path = install_nagios_plugin('templates/nagios_plugin.py',
-                                        'check_k8s_worker.py',
-                                        data=data)
+    plugin_path = install_nagios_plugin_from_text(data,
+                                                  'check_k8s_worker.py')
     hostname = nrpe.get_nagios_hostname()
     current_unit = nrpe.get_nagios_unit_name()
     nrpe_setup = nrpe.NRPE(hostname=hostname)
     nrpe_setup.add_check("node",
                          "Node registered with API Server",
-                         plugin_path)
+                         str(plugin_path))
     nrpe.add_init_service_checks(nrpe_setup, services, current_unit)
     nrpe_setup.write()
 
