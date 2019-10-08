@@ -1272,6 +1272,13 @@ def update_registry_location():
     """
     registry_location = get_registry_location()
 
+    if registry_location:
+        runtime = endpoint_from_flag('endpoint.container-runtime.available')
+        if runtime:
+            runtime.set_config(
+                pause_image_override= \
+                    '{}/pause-{}:3.1'.format(registry_location, arch()))
+
     if data_changed('registry-location', registry_location):
         remove_state('kubernetes-worker.config.created')
         remove_state('kubernetes-worker.ingress.available')
