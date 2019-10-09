@@ -455,11 +455,11 @@ def watch_for_changes():
     dns = kube_control.get_dns()
     cluster_cidr = cni.get_config().get('cidr')
     container_runtime_name = \
-        container_runtime.get_config().get('runtime')
+        container_runtime.get_runtime()
     container_runtime_socket = \
-        container_runtime.get_config().get('socket')
+        container_runtime.get_socket()
     container_runtime_nvidia = \
-        container_runtime.get_config().get('nvidia_enabled')
+        container_runtime.get_nvidia_enabled()
 
     if container_runtime_nvidia:
         set_state('nvidia.ready')
@@ -632,12 +632,12 @@ def configure_kubelet(dns, ingress_ip):
     kubelet_opts['logtostderr'] = 'true'
     kubelet_opts['node-ip'] = ingress_ip
 
-    endpoint_config = \
-        endpoint_from_flag('endpoint.container-runtime.available').get_config()
+    container_runtime = \
+        endpoint_from_flag('endpoint.container-runtime.available')
 
-    kubelet_opts['container-runtime'] = endpoint_config['runtime']
+    kubelet_opts['container-runtime'] = container_runtime.get_runtime()
     if kubelet_opts['container-runtime'] == 'remote':
-        kubelet_opts['container-runtime-endpoint'] = endpoint_config['socket']
+        kubelet_opts['container-runtime-endpoint'] = container_runtime.get_socket()
 
     kubelet_cloud_config_path = cloud_config_path('kubelet')
     if is_state('endpoint.aws.ready'):
