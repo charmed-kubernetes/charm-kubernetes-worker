@@ -64,14 +64,19 @@ from charms.layer.kubernetes_common import client_crt_path
 from charms.layer.kubernetes_common import client_key_path
 from charms.layer.kubernetes_common import get_unit_number
 
+from charms.layer.nagios import install_nagios_plugin_from_text
+from charms.layer.nagios import remove_nagios_plugin
+
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
 # default regex in charmhelpers doesn't allow periods, but nagios itself does.
 nrpe.Check.shortname_re = r'[\.A-Za-z0-9-_]+$'
+nrpe_kubeconfig_path = '/var/lib/nagios/.kube/config'
 
 kubeconfig_path = '/root/cdk/kubeconfig'
 gcp_creds_env_key = 'GOOGLE_APPLICATION_CREDENTIALS'
 snap_resources = ['kubectl', 'kubelet', 'kube-proxy']
+worker_services = ('kubelet', 'kube-proxy')
 checksum_prefix = 'kubernetes-worker.resource-checksums.'
 configure_prefix = 'kubernetes-worker.prev_args.'
 cpu_manager_state = "/var/lib/kubelet/cpu_manager_state"
@@ -127,6 +132,9 @@ def upgrade_charm():
     if is_state('kubernetes-worker.registry.configured'):
         set_state('kubernetes-master-worker-base.registry.configured')
         remove_state('kubernetes-worker.registry.configured')
+
+    if is_flag_set('nrpe-external-master.available'):
+        update_nrpe_config()
 
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
@@ -511,6 +519,7 @@ def start_worker():
     restart_unit_services()
     update_kubelet_status()
     set_state('kubernetes-worker.label-config-required')
+    set_state('nrpe-external-master.reconfigure')
     remove_state('kubernetes-worker.restart-needed')
 
 
@@ -900,39 +909,61 @@ def get_kube_api_servers(kube_api):
 
 @when('nrpe-external-master.available')
 @when_not('nrpe-external-master.initial-config')
-def initial_nrpe_config(nagios=None):
+def initial_nrpe_config():
     set_state('nrpe-external-master.initial-config')
-    update_nrpe_config(nagios)
+    update_nrpe_config()
 
 
 @when('kubernetes-worker.config.created')
 @when('nrpe-external-master.available')
+@when('kube-api-endpoint.available')
+@when('kube-control.auth.available')
 @when_any('config.changed.nagios_context',
-          'config.changed.nagios_servicegroups')
-def update_nrpe_config(unused=None):
-    services = ('snap.kubelet.daemon', 'snap.kube-proxy.daemon')
+          'config.changed.nagios_servicegroups',
+          'nrpe-external-master.reconfigure')
+def update_nrpe_config():
+    services = ['snap.{}.daemon'.format(s) for s in worker_services]
+    data = render('nagios_plugin.py', context={'node_name': get_node_name()})
+    plugin_path = install_nagios_plugin_from_text(data,
+                                                  'check_k8s_worker.py')
     hostname = nrpe.get_nagios_hostname()
     current_unit = nrpe.get_nagios_unit_name()
     nrpe_setup = nrpe.NRPE(hostname=hostname)
+    nrpe_setup.add_check("node",
+                         "Node registered with API Server",
+                         str(plugin_path))
     nrpe.add_init_service_checks(nrpe_setup, services, current_unit)
     nrpe_setup.write()
+
+    creds = db.get('credentials')
+    if creds:
+        kube_api = endpoint_from_flag('kube-api-endpoint.available')
+        servers = get_kube_api_servers(kube_api)
+        server = servers[get_unit_number() % len(servers)]
+        create_kubeconfig(nrpe_kubeconfig_path, server, ca_crt_path,
+                          token=creds['client_token'], user='nagios')
+        # Make the config dir owned by the nagios user.
+        cmd = ['chown', '-R', 'nagios:nagios',
+               os.path.dirname(nrpe_kubeconfig_path)]
+        check_call(cmd)
+
+    remove_state('nrpe-external-master.reconfigure')
 
 
 @when_not('nrpe-external-master.available')
 @when('nrpe-external-master.initial-config')
-def remove_nrpe_config(nagios=None):
+def remove_nrpe_config():
     remove_state('nrpe-external-master.initial-config')
-
-    # List of systemd services for which the checks will be removed
-    services = ('snap.kubelet.daemon', 'snap.kube-proxy.daemon')
+    remove_nagios_plugin('check_k8s_worker.py')
 
     # The current nrpe-external-master interface doesn't handle a lot of logic,
     # use the charm-helpers code for now.
     hostname = nrpe.get_nagios_hostname()
     nrpe_setup = nrpe.NRPE(hostname=hostname)
 
-    for service in services:
+    for service in worker_services:
         nrpe_setup.remove_check(shortname=service)
+    nrpe_setup.remove_check('node')
 
 
 @when('nvidia.ready')
