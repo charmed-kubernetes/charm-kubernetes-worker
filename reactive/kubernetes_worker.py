@@ -1275,9 +1275,11 @@ def update_registry_location():
     if registry_location:
         runtime = endpoint_from_flag('endpoint.container-runtime.available')
         if runtime:
+            # Construct and send the sandbox image (pause container) to our runtime
+            uri = '{}/pause-{}:3.1'.format(registry_location, arch())
             runtime.set_config(
-                pause_image_override= \
-                    '{}/pause-{}:3.1'.format(registry_location, arch()))
+                sandbox_image=uri
+            )
 
     if data_changed('registry-location', registry_location):
         remove_state('kubernetes-worker.config.created')
