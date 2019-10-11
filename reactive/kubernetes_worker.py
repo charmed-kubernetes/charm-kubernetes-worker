@@ -463,11 +463,11 @@ def watch_for_changes():
     dns = kube_control.get_dns()
     cluster_cidr = cni.get_config().get('cidr')
     container_runtime_name = \
-        container_runtime.get_config().get('runtime')
+        container_runtime.get_runtime()
     container_runtime_socket = \
-        container_runtime.get_config().get('socket')
+        container_runtime.get_socket()
     container_runtime_nvidia = \
-        container_runtime.get_config().get('nvidia_enabled')
+        container_runtime.get_nvidia_enabled()
 
     if container_runtime_nvidia:
         set_state('nvidia.ready')
@@ -641,12 +641,12 @@ def configure_kubelet(dns, ingress_ip):
     kubelet_opts['logtostderr'] = 'true'
     kubelet_opts['node-ip'] = ingress_ip
 
-    endpoint_config = \
-        endpoint_from_flag('endpoint.container-runtime.available').get_config()
+    container_runtime = \
+        endpoint_from_flag('endpoint.container-runtime.available')
 
-    kubelet_opts['container-runtime'] = endpoint_config['runtime']
+    kubelet_opts['container-runtime'] = container_runtime.get_runtime()
     if kubelet_opts['container-runtime'] == 'remote':
-        kubelet_opts['container-runtime-endpoint'] = endpoint_config['socket']
+        kubelet_opts['container-runtime-endpoint'] = container_runtime.get_socket()
 
     kubelet_cloud_config_path = cloud_config_path('kubelet')
     if is_state('endpoint.aws.ready'):
@@ -1302,6 +1302,15 @@ def update_registry_location():
     our image-related handlers will be invoked with an accurate registry.
     """
     registry_location = get_registry_location()
+
+    if registry_location:
+        runtime = endpoint_from_flag('endpoint.container-runtime.available')
+        if runtime:
+            # Construct and send the sandbox image (pause container) to our runtime
+            uri = '{}/pause-{}:3.1'.format(registry_location, arch())
+            runtime.set_config(
+                sandbox_image=uri
+            )
 
     if data_changed('registry-location', registry_location):
         remove_state('kubernetes-worker.config.created')
