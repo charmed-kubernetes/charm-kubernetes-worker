@@ -31,7 +31,7 @@ from charms import layer
 from charms.layer import snap
 from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
-from charms.reactive import set_state, remove_state, is_state
+from charms.reactive import set_state, remove_state, is_state, is_flag_set
 from charms.reactive import when, when_any, when_not, when_none
 
 from charms.reactive.helpers import data_changed
