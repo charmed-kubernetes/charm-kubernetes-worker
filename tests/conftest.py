@@ -17,7 +17,9 @@ sys.modules['charms'] = charms
 sys.modules['charms.layer'] = charms.layer
 sys.modules['charms.layer.hacluster'] = charms.layer.hacluster
 sys.modules['charms.layer.kubernetes_common'] = charms.layer.kubernetes_common
+sys.modules['charms.layer.nagios'] = charms.layer.nagios
 sys.modules['charms.leadership'] = charms.leadership
 sys.modules['charms.reactive'] = charms.reactive
+sys.modules['charms.templating.jinja2'] = MagicMock()
 
 os.environ['JUJU_MODEL_UUID'] = 'test-1234'
