@@ -35,3 +35,8 @@ options:
     services:
       - 'snap.kubelet.daemon'
       - 'snap.kube-proxy.daemon'
+exclude:
+  - .tox
+  - __pycache__
+  - tests
+  - tox.ini
