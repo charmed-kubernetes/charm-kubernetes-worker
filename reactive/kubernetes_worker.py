@@ -30,7 +30,7 @@ from charms import layer
 from charms.layer import snap
 from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
-from charms.reactive import set_state, remove_state, is_state, is_flag_set
+from charms.reactive import set_state, remove_state, is_state
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed
 from charms.templating.jinja2 import render
@@ -130,9 +130,6 @@ def upgrade_charm():
     if is_state('kubernetes-worker.registry.configured'):
         set_state('kubernetes-master-worker-base.registry.configured')
         remove_state('kubernetes-worker.registry.configured')
-
-    if is_flag_set('nrpe-external-master.available'):
-        update_nrpe_config()
 
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
@@ -905,13 +902,6 @@ def get_kube_api_servers(kube_api):
     return hosts
 
 
-@when('nrpe-external-master.available')
-@when_not('nrpe-external-master.initial-config')
-def initial_nrpe_config():
-    set_state('nrpe-external-master.initial-config')
-    update_nrpe_config()
-
-
 @when('kubernetes-worker.config.created')
 @when('nrpe-external-master.available')
 @when('kube-api-endpoint.available')
@@ -945,7 +935,8 @@ def update_nrpe_config():
                os.path.dirname(nrpe_kubeconfig_path)]
         check_call(cmd)
 
-    remove_state('nrpe-external-master.reconfigure')
+        remove_state('nrpe-external-master.reconfigure')
+        set_state('nrpe-external-master.initial-config')
 
 
 @when_not('nrpe-external-master.available')
