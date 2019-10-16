@@ -910,7 +910,6 @@ def get_kube_api_servers(kube_api):
           'config.changed.nagios_servicegroups',
           'nrpe-external-master.reconfigure')
 def update_nrpe_config():
-    set_state('nrpe-external-master.initial-config')
     services = ['snap.{}.daemon'.format(s) for s in worker_services]
     data = render('nagios_plugin.py', context={'node_name': get_node_name()})
     plugin_path = install_nagios_plugin_from_text(data,
@@ -937,6 +936,7 @@ def update_nrpe_config():
         check_call(cmd)
 
         remove_state('nrpe-external-master.reconfigure')
+        set_state('nrpe-external-master.initial-config')
 
 
 @when_not('nrpe-external-master.available')
