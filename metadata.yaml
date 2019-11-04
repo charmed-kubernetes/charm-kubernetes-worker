@@ -33,6 +33,8 @@ requires:
     interface: kube-control
   aws:
     interface: aws-integration
+  coredns:
+    interface: coredns
   gcp:
     interface: gcp-integration
   openstack:

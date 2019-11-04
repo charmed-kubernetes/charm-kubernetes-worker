@@ -1325,3 +1325,23 @@ def get_registry_location():
         registry = ""
 
     return registry
+
+
+@when('coredns.ready', 'kube-control.dns.available')
+def set_cluster_dns():
+    """Set ClusterDNS in the kubelet config.
+
+    If a relation with the CoreDNS k8s charm is added its service
+    IP will be added in the kubelet config as the ClusterDNS argument
+    and the kubelet will be restarted.
+    """
+    coredns = endpoint_from_flag('coredns.ready')
+    clusterdns_ip = coredns.get_ip()
+    kube_control = endpoint_from_flag('kube-control.dns.available')
+    dns = kube_control.get_dns()
+    ingress_ip = get_ingress_address(kube_control.endpoint_name)
+    dns['sdn-ip'] = clusterdns_ip
+    dns['enable-kube-dns'] = True
+    configure_kubelet(dns, ingress_ip)
+    restart_unit_services()
+    update_kubelet_status()

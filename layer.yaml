@@ -9,6 +9,7 @@ includes:
   - 'layer:tls-client'
   - 'layer:cdk-service-kicker'
   - 'layer:kubernetes-master-worker-base'
+  - 'interface:coredns'
   - 'interface:http'
   - 'interface:kubernetes-cni'
   - 'interface:kube-dns'
