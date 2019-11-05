@@ -665,6 +665,12 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
         kubelet_opts['provider-id'] = azure.vm_id
 
+    if is_state('coredns.ready'):
+        coredns = endpoint_from_flag('coredns.ready')
+        clusterdns_ip = coredns.get_ip()
+        dns['sdn-ip'] = clusterdns_ip
+        dns['enable-kube-dns'] = True
+
     if get_version('kubelet') >= (1, 10):
         # Put together the KubeletConfiguration data
         kubelet_config = {
@@ -1335,13 +1341,9 @@ def set_cluster_dns():
     IP will be added in the kubelet config as the ClusterDNS argument
     and the kubelet will be restarted.
     """
-    coredns = endpoint_from_flag('coredns.ready')
-    clusterdns_ip = coredns.get_ip()
     kube_control = endpoint_from_flag('kube-control.dns.available')
     dns = kube_control.get_dns()
     ingress_ip = get_ingress_address(kube_control.endpoint_name)
-    dns['sdn-ip'] = clusterdns_ip
-    dns['enable-kube-dns'] = True
     configure_kubelet(dns, ingress_ip)
     restart_unit_services()
     update_kubelet_status()
