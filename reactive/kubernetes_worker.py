@@ -547,31 +547,41 @@ def apply_node_labels():
             hookenv.log('Skipping malformed option: {}.'.format(item))
     # Collect the current label state.
     current_labels = db.get('current_labels') or {}
-    # Remove any labels that the user has removed from the config.
-    for key in list(current_labels.keys()):
-        if key not in user_labels:
-            try:
+
+    try:
+        # Remove any labels that the user has removed from the config.
+        for key in list(current_labels.keys()):
+            if key not in user_labels:
                 remove_label(key)
                 del current_labels[key]
                 db.set('current_labels', current_labels)
-            except ApplyNodeLabelFailed as e:
-                hookenv.log(str(e))
-                return
-    # Add any new labels.
-    for key, val in user_labels.items():
-        try:
+
+        # Add any new labels.
+        for key, val in user_labels.items():
             set_label(key, val)
             current_labels[key] = val
             db.set('current_labels', current_labels)
-        except ApplyNodeLabelFailed as e:
-            hookenv.log(str(e))
-            return
-    # Set the juju-application label.
-    try:
+
+        # Set the juju-application label.
         set_label('juju-application', hookenv.service_name())
+
+        # Set the juju.io/cloud label.
+        if is_state('endpoint.aws.ready'):
+            set_label('juju.io/cloud', 'ec2')
+        elif is_state('endpoint.gcp.ready'):
+            set_label('juju.io/cloud', 'gce')
+        elif is_state('endpoint.openstack.ready'):
+            set_label('juju.io/cloud', 'openstack')
+        elif is_state('endpoint.vsphere.ready'):
+            set_label('juju.io/cloud', 'vsphere')
+        elif is_state('endpoint.azure.ready'):
+            set_label('juju.io/cloud', 'azure')
+        else:
+            remove_label('juju.io/cloud')
     except ApplyNodeLabelFailed as e:
         hookenv.log(str(e))
         return
+
     # Label configuration complete.
     remove_state('kubernetes-worker.label-config-required')
 
