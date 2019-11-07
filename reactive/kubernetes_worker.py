@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import re
 import shutil
@@ -33,8 +32,7 @@ from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
 from charms.reactive import set_state, remove_state, is_state
 from charms.reactive import when, when_any, when_not, when_none
-
-from charms.reactive.helpers import data_changed
+from charms.reactive import data_changed
 from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
@@ -64,14 +62,19 @@ from charms.layer.kubernetes_common import client_crt_path
 from charms.layer.kubernetes_common import client_key_path
 from charms.layer.kubernetes_common import get_unit_number
 
+from charms.layer.nagios import install_nagios_plugin_from_text
+from charms.layer.nagios import remove_nagios_plugin
+
 # Override the default nagios shortname regex to allow periods, which we
 # need because our bin names contain them (e.g. 'snap.foo.daemon'). The
 # default regex in charmhelpers doesn't allow periods, but nagios itself does.
 nrpe.Check.shortname_re = r'[\.A-Za-z0-9-_]+$'
+nrpe_kubeconfig_path = '/var/lib/nagios/.kube/config'
 
 kubeconfig_path = '/root/cdk/kubeconfig'
 gcp_creds_env_key = 'GOOGLE_APPLICATION_CREDENTIALS'
 snap_resources = ['kubectl', 'kubelet', 'kube-proxy']
+worker_services = ('kubelet', 'kube-proxy')
 checksum_prefix = 'kubernetes-worker.resource-checksums.'
 configure_prefix = 'kubernetes-worker.prev_args.'
 cpu_manager_state = "/var/lib/kubelet/cpu_manager_state"
@@ -465,11 +468,11 @@ def watch_for_changes():
     dns = kube_control.get_dns()
     cluster_cidr = cni.get_config().get('cidr')
     container_runtime_name = \
-        container_runtime.get_config().get('runtime')
+        container_runtime.get_runtime()
     container_runtime_socket = \
-        container_runtime.get_config().get('socket')
+        container_runtime.get_socket()
     container_runtime_nvidia = \
-        container_runtime.get_config().get('nvidia_enabled')
+        container_runtime.get_nvidia_enabled()
 
     if container_runtime_nvidia:
         set_state('nvidia.ready')
@@ -521,6 +524,7 @@ def start_worker():
     restart_unit_services()
     update_kubelet_status()
     set_state('kubernetes-worker.label-config-required')
+    set_state('nrpe-external-master.reconfigure')
     remove_state('kubernetes-worker.restart-needed')
 
 
@@ -553,31 +557,41 @@ def apply_node_labels():
             hookenv.log('Skipping malformed option: {}.'.format(item))
     # Collect the current label state.
     current_labels = db.get('current_labels') or {}
-    # Remove any labels that the user has removed from the config.
-    for key in list(current_labels.keys()):
-        if key not in user_labels:
-            try:
+
+    try:
+        # Remove any labels that the user has removed from the config.
+        for key in list(current_labels.keys()):
+            if key not in user_labels:
                 remove_label(key)
                 del current_labels[key]
                 db.set('current_labels', current_labels)
-            except ApplyNodeLabelFailed as e:
-                hookenv.log(str(e))
-                return
-    # Add any new labels.
-    for key, val in user_labels.items():
-        try:
+
+        # Add any new labels.
+        for key, val in user_labels.items():
             set_label(key, val)
             current_labels[key] = val
             db.set('current_labels', current_labels)
-        except ApplyNodeLabelFailed as e:
-            hookenv.log(str(e))
-            return
-    # Set the juju-application label.
-    try:
+
+        # Set the juju-application label.
         set_label('juju-application', hookenv.service_name())
+
+        # Set the juju.io/cloud label.
+        if is_state('endpoint.aws.ready'):
+            set_label('juju.io/cloud', 'ec2')
+        elif is_state('endpoint.gcp.ready'):
+            set_label('juju.io/cloud', 'gce')
+        elif is_state('endpoint.openstack.ready'):
+            set_label('juju.io/cloud', 'openstack')
+        elif is_state('endpoint.vsphere.ready'):
+            set_label('juju.io/cloud', 'vsphere')
+        elif is_state('endpoint.azure.ready'):
+            set_label('juju.io/cloud', 'azure')
+        else:
+            remove_label('juju.io/cloud')
     except ApplyNodeLabelFailed as e:
         hookenv.log(str(e))
         return
+
     # Label configuration complete.
     remove_state('kubernetes-worker.label-config-required')
 
@@ -642,12 +656,12 @@ def configure_kubelet(dns, ingress_ip):
     kubelet_opts['logtostderr'] = 'true'
     kubelet_opts['node-ip'] = ingress_ip
 
-    endpoint_config = \
-        endpoint_from_flag('endpoint.container-runtime.available').get_config()
+    container_runtime = \
+        endpoint_from_flag('endpoint.container-runtime.available')
 
-    kubelet_opts['container-runtime'] = endpoint_config['runtime']
+    kubelet_opts['container-runtime'] = container_runtime.get_runtime()
     if kubelet_opts['container-runtime'] == 'remote':
-        kubelet_opts['container-runtime-endpoint'] = endpoint_config['socket']
+        kubelet_opts['container-runtime-endpoint'] = container_runtime.get_socket()
 
     kubelet_cloud_config_path = cloud_config_path('kubelet')
     if is_state('endpoint.aws.ready'):
@@ -819,8 +833,8 @@ def render_and_launch_ingress():
             nginx_registry = registry_location
         else:
             nginx_registry = 'quay.io'
-        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.25.1',  # noqa
-                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.25.1',  # noqa
+        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.26.1',  # noqa
+                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.26.1',  # noqa
                   's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
                   'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
                  }
@@ -908,41 +922,57 @@ def get_kube_api_servers(kube_api):
     return hosts
 
 
-@when('nrpe-external-master.available')
-@when_not('nrpe-external-master.initial-config')
-def initial_nrpe_config(nagios=None):
-    set_state('nrpe-external-master.initial-config')
-    update_nrpe_config(nagios)
-
-
 @when('kubernetes-worker.config.created')
 @when('nrpe-external-master.available')
+@when('kube-api-endpoint.available')
+@when('kube-control.auth.available')
 @when_any('config.changed.nagios_context',
-          'config.changed.nagios_servicegroups')
-def update_nrpe_config(unused=None):
-    services = ('snap.kubelet.daemon', 'snap.kube-proxy.daemon')
+          'config.changed.nagios_servicegroups',
+          'nrpe-external-master.reconfigure')
+def update_nrpe_config():
+    services = ['snap.{}.daemon'.format(s) for s in worker_services]
+    data = render('nagios_plugin.py', context={'node_name': get_node_name()})
+    plugin_path = install_nagios_plugin_from_text(data,
+                                                  'check_k8s_worker.py')
     hostname = nrpe.get_nagios_hostname()
     current_unit = nrpe.get_nagios_unit_name()
     nrpe_setup = nrpe.NRPE(hostname=hostname)
+    nrpe_setup.add_check("node",
+                         "Node registered with API Server",
+                         str(plugin_path))
     nrpe.add_init_service_checks(nrpe_setup, services, current_unit)
     nrpe_setup.write()
+
+    creds = db.get('credentials')
+    if creds:
+        kube_api = endpoint_from_flag('kube-api-endpoint.available')
+        servers = get_kube_api_servers(kube_api)
+        server = servers[get_unit_number() % len(servers)]
+        create_kubeconfig(nrpe_kubeconfig_path, server, ca_crt_path,
+                          token=creds['client_token'], user='nagios')
+        # Make the config dir owned by the nagios user.
+        cmd = ['chown', '-R', 'nagios:nagios',
+               os.path.dirname(nrpe_kubeconfig_path)]
+        check_call(cmd)
+
+        remove_state('nrpe-external-master.reconfigure')
+        set_state('nrpe-external-master.initial-config')
 
 
 @when_not('nrpe-external-master.available')
 @when('nrpe-external-master.initial-config')
-def remove_nrpe_config(nagios=None):
+def remove_nrpe_config():
     remove_state('nrpe-external-master.initial-config')
-
-    # List of systemd services for which the checks will be removed
-    services = ('snap.kubelet.daemon', 'snap.kube-proxy.daemon')
+    remove_nagios_plugin('check_k8s_worker.py')
 
     # The current nrpe-external-master interface doesn't handle a lot of logic,
     # use the charm-helpers code for now.
     hostname = nrpe.get_nagios_hostname()
     nrpe_setup = nrpe.NRPE(hostname=hostname)
 
-    for service in services:
+    for service in worker_services:
         nrpe_setup.remove_check(shortname=service)
+    nrpe_setup.remove_check('node')
 
 
 @when('nvidia.ready')
@@ -1281,6 +1311,15 @@ def update_registry_location():
     our image-related handlers will be invoked with an accurate registry.
     """
     registry_location = get_registry_location()
+
+    if registry_location:
+        runtime = endpoint_from_flag('endpoint.container-runtime.available')
+        if runtime:
+            # Construct and send the sandbox image (pause container) to our runtime
+            uri = '{}/pause-{}:3.1'.format(registry_location, arch())
+            runtime.set_config(
+                sandbox_image=uri
+            )
 
     if data_changed('registry-location', registry_location):
         remove_state('kubernetes-worker.config.created')
