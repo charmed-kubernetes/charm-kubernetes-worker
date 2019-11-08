@@ -26,11 +26,14 @@ from subprocess import check_call, check_output
 from subprocess import CalledProcessError
 from socket import gethostname
 
+import charms.coordinator
 from charms import layer
 from charms.layer import snap
 from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
-from charms.reactive import set_state, remove_state, is_state
+from charms.reactive import remove_state, clear_flag
+from charms.reactive import set_state, set_flag
+from charms.reactive import is_state
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed
 from charms.templating.jinja2 import render
@@ -234,10 +237,40 @@ def install_snaps():
 
 @when('kubernetes-worker.snaps.installed',
       'kube-control.cohort_keys.available')
-def join_or_update_cohorts():
+@when_none('coordinator.granted.cohort',
+           'coordinator.requested.cohort')
+def safely_join_cohort():
+    '''Coordinate the rollout of snap refreshes.
+
+    When cohort keys change, grab a lock so that only 1 unit in the
+    application joins the new cohort at a time. This allows us to roll out
+    snap refreshes without risking all units going down at once.
+    '''
     kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
+    cohort_keys = kube_control.cohort_keys
+    # NB: initial data-changed is always true
+    if data_changed('master-cohorts', cohort_keys):
+        clear_flag('kubernetes-worker.cohorts.joined')
+        charms.coordinator.acquire('cohort')
+
+
+@when('kubernetes-worker.snaps.installed',
+      'kube-control.cohort_keys.available',
+      'coordinator.granted.cohort')
+@when_not('kubernetes-worker.cohorts.joined')
+def join_or_update_cohorts():
+    '''Join or update a cohort snapshot.
+
+    All units of this application (leader and followers) need to refresh their
+    installed snaps to the current cohort snapshot.
+    '''
+    kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
+    cohort_keys = kube_control.cohort_keys
     for snapname in cohort_snaps:
-        snap.join_cohort_snapshot(snapname, kube_control.cohort_keys[snapname])
+        cohort_key = cohort_keys[snapname]
+        snap.join_cohort_snapshot(snapname, cohort_key)
+    hookenv.log('{} has joined the snap cohort'.format(hookenv.local_unit()))
+    set_flag('kubernetes-worker.cohorts.joined')
 
 
 @hook('stop')
