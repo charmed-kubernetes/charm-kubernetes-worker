@@ -247,9 +247,20 @@ def safely_join_cohort():
     snap refreshes without risking all units going down at once.
     '''
     kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
+
+    # It's possible to join a cohort before snapd knows about the snap proxy.
+    # When this happens, we'll join a cohort, yet install default snaps. We
+    # won't refresh those until the k8s-master keys change. Ensure we always
+    # check for available refreshes even if the master keys haven't changed.
+    force_join = False
+    for snapname in cohort_snaps:
+        if snap.is_refresh_available(snapname):
+            force_join = True
+            break
+
     cohort_keys = kube_control.cohort_keys
     # NB: initial data-changed is always true
-    if data_changed('master-cohorts', cohort_keys):
+    if data_changed('master-cohorts', cohort_keys) or force_join:
         clear_flag('kubernetes-worker.cohorts.joined')
         charms.coordinator.acquire('cohort')
 
@@ -267,6 +278,7 @@ def join_or_update_cohorts():
     kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
     cohort_keys = kube_control.cohort_keys
     for snapname in cohort_snaps:
+        hookenv.status_set('maintenance', 'Joining snap cohort.')
         cohort_key = cohort_keys[snapname]
         snap.join_cohort_snapshot(snapname, cohort_key)
     hookenv.log('{} has joined the snap cohort'.format(hookenv.local_unit()))
