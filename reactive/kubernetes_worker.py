@@ -26,11 +26,14 @@ from subprocess import check_call, check_output
 from subprocess import CalledProcessError
 from socket import gethostname
 
+import charms.coordinator
 from charms import layer
 from charms.layer import snap
 from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
-from charms.reactive import set_state, remove_state, is_state
+from charms.reactive import remove_state, clear_flag
+from charms.reactive import set_state, set_flag
+from charms.reactive import is_state
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed
 from charms.templating.jinja2 import render
@@ -78,6 +81,8 @@ worker_services = ('kubelet', 'kube-proxy')
 checksum_prefix = 'kubernetes-worker.resource-checksums.'
 configure_prefix = 'kubernetes-worker.prev_args.'
 cpu_manager_state = "/var/lib/kubelet/cpu_manager_state"
+
+cohort_snaps = ['kubectl', 'kubelet', 'kube-proxy']
 
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 db = unitdata.kv()
@@ -228,6 +233,56 @@ def install_snaps():
     set_state('kubernetes-worker.restart-needed')
     remove_state('kubernetes-worker.snaps.upgrade-needed')
     remove_state('kubernetes-worker.snaps.upgrade-specified')
+
+
+@when('kubernetes-worker.snaps.installed',
+      'kube-control.cohort_keys.available')
+@when_none('coordinator.granted.cohort',
+           'coordinator.requested.cohort')
+def safely_join_cohort():
+    '''Coordinate the rollout of snap refreshes.
+
+    When cohort keys change, grab a lock so that only 1 unit in the
+    application joins the new cohort at a time. This allows us to roll out
+    snap refreshes without risking all units going down at once.
+    '''
+    kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
+
+    # It's possible to join a cohort before snapd knows about the snap proxy.
+    # When this happens, we'll join a cohort, yet install default snaps. We
+    # won't refresh those until the k8s-master keys change. Ensure we always
+    # check for available refreshes even if the master keys haven't changed.
+    force_join = False
+    for snapname in cohort_snaps:
+        if snap.is_refresh_available(snapname):
+            force_join = True
+            break
+
+    cohort_keys = kube_control.cohort_keys
+    # NB: initial data-changed is always true
+    if data_changed('master-cohorts', cohort_keys) or force_join:
+        clear_flag('kubernetes-worker.cohorts.joined')
+        charms.coordinator.acquire('cohort')
+
+
+@when('kubernetes-worker.snaps.installed',
+      'kube-control.cohort_keys.available',
+      'coordinator.granted.cohort')
+@when_not('kubernetes-worker.cohorts.joined')
+def join_or_update_cohorts():
+    '''Join or update a cohort snapshot.
+
+    All units of this application (leader and followers) need to refresh their
+    installed snaps to the current cohort snapshot.
+    '''
+    kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
+    cohort_keys = kube_control.cohort_keys
+    for snapname in cohort_snaps:
+        hookenv.status_set('maintenance', 'Joining snap cohort.')
+        cohort_key = cohort_keys[snapname]
+        snap.join_cohort_snapshot(snapname, cohort_key)
+    hookenv.log('{} has joined the snap cohort'.format(hookenv.local_unit()))
+    set_flag('kubernetes-worker.cohorts.joined')
 
 
 @hook('stop')

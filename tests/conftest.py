@@ -14,6 +14,7 @@ sys.modules['charmhelpers.contrib'] = ch.contrib
 sys.modules['charmhelpers.contrib.charmsupport'] = ch.contrib.charmsupport
 charms = MagicMock()
 sys.modules['charms'] = charms
+sys.modules['charms.coordinator'] = charms.coordinator
 sys.modules['charms.layer'] = charms.layer
 sys.modules['charms.layer.hacluster'] = charms.layer.hacluster
 sys.modules['charms.layer.kubernetes_common'] = charms.layer.kubernetes_common
