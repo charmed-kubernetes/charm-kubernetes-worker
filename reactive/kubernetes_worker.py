@@ -135,6 +135,7 @@ def upgrade_charm():
     remove_state('kubernetes-worker.config.created')
     remove_state('kubernetes-worker.ingress.available')
     remove_state('worker.auth.bootstrapped')
+    remove_state('nfs.configured')
     set_state('kubernetes-worker.restart-needed')
 
 
