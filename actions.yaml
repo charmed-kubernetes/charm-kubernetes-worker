@@ -32,7 +32,9 @@ microbot:
 upgrade:
     description: Upgrade the kubernetes snaps
 registry:
-     description: Create a private Docker registry
+     description: |
+       Create a private Docker registry.
+       DEPRECATED: See https://ubuntu.com/kubernetes/docs/docker-registry
      params:
       htpasswd:
         type: string
