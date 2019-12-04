@@ -37,6 +37,13 @@ context = {}
 arch = check_output(['dpkg', '--print-architecture']).rstrip()
 context['arch'] = arch.decode('utf-8')
 
+# This action was deprecated in 1.17.
+action_set({
+    'notice':
+    ('DEPRECATED: See https://ubuntu.com/kubernetes/docs/docker-registry '
+     'for supported container registry options.')
+})
+
 # These config options must be defined in the case of a creation
 param_error = False
 for param in ('tlscert', 'tlskey', 'domain', 'htpasswd', 'htpasswd-plain'):
