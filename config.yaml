@@ -54,6 +54,14 @@ options:
       to attempt auto-retrieval of intermediate certificates.  The default
       (false) is recommended for all production kubernetes installations, and
       any environment which does not have outbound Internet access.
+  ingress-default-ssl-certificate:
+    type: string
+    default: ""
+    description: |
+      Secret containing a SSL certificate to be used by the default HTTPS server
+      (catch-all). Takes the form "namespace/name". If this flag is not provided
+      ingress will use a self-signed certificate.
+      Example: "default/foo-tls"
   nginx-image:
     type: string
     default: "auto"
