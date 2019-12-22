@@ -129,7 +129,7 @@ def upgrade_charm():
 
     # force certs to be updated
     if is_state('certificates.available') and \
-       is_state('kube-control.connected'):
+            is_state('kube-control.connected'):
         send_data()
 
     if is_state('kubernetes-worker.registry.configured'):
@@ -156,7 +156,7 @@ def remove_old_ingress():
         kubectl('delete', 'svc', 'default-http-backend',
                 '--ignore-not-found')
         kubectl('delete', 'ds', 'nginx-ingress-{}-controller'.format(
-                    hookenv.service_name()), '--ignore-not-found')
+            hookenv.service_name()), '--ignore-not-found')
         kubectl('delete', 'serviceaccount',
                 'nginx-ingress-{}-serviceaccount'.format(
                     hookenv.service_name()), '--ignore-not-found')
@@ -405,7 +405,7 @@ def deprecated_extra_args():
     deprecated_args = []
     services = [
         # service       config_key
-        ('kubelet',    'kubelet-extra-args'),
+        ('kubelet', 'kubelet-extra-args'),
         ('kube-proxy', 'proxy-extra-args')
     ]
     for service, config_key in services:
@@ -853,7 +853,7 @@ def render_and_launch_ingress():
 
     context['defaultbackend_image'] = config.get('default-backend-image')
     if (context['defaultbackend_image'] == "" or
-       context['defaultbackend_image'] == "auto"):
+            context['defaultbackend_image'] == "auto"):
         if registry_location:
             backend_registry = registry_location
         else:
@@ -873,6 +873,12 @@ def render_and_launch_ingress():
         'ingress-ssl-chain-completion')
     context['enable_ssl_passthrough'] = config.get(
         'ingress-ssl-passthrough')
+
+    context['default_ssl_certificate'] = ''
+    if config.get('ingress-default-ssl-certificate'):
+        context['default_ssl_certificate'] = '--default-ssl-certificate={}'.format(
+            config.get('ingress-default-ssl-certificate'))
+
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
         if registry_location:
@@ -883,7 +889,7 @@ def render_and_launch_ingress():
                   'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.26.1',  # noqa
                   's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
                   'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
-                 }
+                  }
         context['ingress_image'] = '{}/{}'.format(nginx_registry,
                                                   images.get(context['arch'],
                                                              images['amd64']))
