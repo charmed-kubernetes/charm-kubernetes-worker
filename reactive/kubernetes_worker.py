@@ -876,7 +876,7 @@ def render_and_launch_ingress():
 
     context['default_ssl_certificate'] = ''
     if config.get('ingress-default-ssl-certificate'):
-        context['default_ssl_certificate'] = '--default-ssl-certificate={}'.format(
+        context['default_ssl_certificate'] = '- --default-ssl-certificate={}'.format(
             config.get('ingress-default-ssl-certificate'))
 
     context['ingress_image'] = config.get('nginx-image')
