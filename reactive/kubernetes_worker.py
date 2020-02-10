@@ -22,6 +22,7 @@ import time
 import traceback
 import yaml
 
+from base64 import b64encode
 from subprocess import check_call, check_output
 from subprocess import CalledProcessError
 from socket import gethostname
@@ -826,7 +827,9 @@ def toggle_ingress_state():
 @when_any('config.changed.default-backend-image',
           'config.changed.ingress-ssl-chain-completion',
           'config.changed.nginx-image',
-          'config.changed.ingress-ssl-passthrough')
+          'config.changed.ingress-ssl-passthrough',
+          'config.changed.ingress-default-ssl-certificate',
+          'config.changed.ingress-default-ssl-key')
 def reconfigure_ingress():
     remove_state('kubernetes-worker.ingress.available')
 
@@ -873,6 +876,19 @@ def render_and_launch_ingress():
         'ingress-ssl-chain-completion')
     context['enable_ssl_passthrough'] = config.get(
         'ingress-ssl-passthrough')
+    context['default_ssl_certificate_option'] = None
+    if config.get('ingress-default-ssl-certificate') and config.get(
+            'ingress-default-ssl-key'):
+        context['default_ssl_certificate'] = b64encode(
+            config.get('ingress-default-ssl-certificate').encode(
+                'utf-8')).decode('utf-8')
+        context['default_ssl_key'] = b64encode(
+            config.get('ingress-default-ssl-key').encode('utf-8')).decode(
+                'utf-8')
+        default_certificate_option = (
+            '- --default-ssl-certificate='
+            '$(POD_NAMESPACE)/default-ssl-certificate')
+        context['default_ssl_certificate_option'] = default_certificate_option
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
         if registry_location:
