@@ -1408,7 +1408,6 @@ def configure_default_cni():
     default_cni = kube_control.get_default_cni()
     cni = endpoint_from_flag('cni.available')
     cni_conf = cni.get_config(default=default_cni)
-    cni_conf_file = cni_conf['cni-conf-file']
-    source = cni_conf_dir + '/' + cni_conf_file
+    source = cni_conf['cni-conf-file']
     dest = cni_conf_dir + '/' + '05-default.' + source.split('.')[-1]
     os.symlink(source, dest)

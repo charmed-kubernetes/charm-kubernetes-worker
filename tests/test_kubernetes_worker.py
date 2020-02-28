@@ -27,6 +27,6 @@ def test_configure_default_cni(os_symlink, os_remove, os_listdir):
     kubernetes_worker.configure_default_cni()
     os_remove.assert_called_once_with('/etc/cni/net.d/05-default.conflist')
     os_symlink.assert_called_once_with(
-        '/etc/cni/net.d/10-cni.conflist',
+        '10-cni.conflist',
         '/etc/cni/net.d/05-default.conflist'
     )
