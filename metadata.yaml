@@ -18,8 +18,9 @@ description: |
 tags:
   - misc
 series:
-  - xenial
   - bionic
+  - xenial
+  - focal
 subordinate: false
 requires:
   kube-api-endpoint:
