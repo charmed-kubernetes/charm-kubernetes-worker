@@ -1397,6 +1397,17 @@ def get_registry_location():
 
 
 def configure_default_cni():
+    """Set the default CNI configuration to be used by CNI clients
+    (kubelet, containerd).
+
+    CNI clients choose whichever CNI config in /etc/cni/net.d/ is
+    alphabetically first, so we accomplish this by creating a file named
+    /etc/cni/net.d/05-default.conflist, which is alphabetically earlier than
+    typical CNI config names, e.g. 10-flannel.conflist and 10-calico.conflist
+
+    The created 05-default.conflist file is a symlink to whichever CNI config
+    is actually going to be used.
+    """
     # Clean up current default
     cni_conf_dir = '/etc/cni/net.d'
     for filename in os.listdir(cni_conf_dir):
