@@ -1,17 +1,32 @@
 import pytest
-from unittest import mock
+from unittest.mock import patch
+from reactive import kubernetes_worker
+from charms.reactive import endpoint_from_flag
 
 
 def patch_fixture(patch_target):
     @pytest.fixture()
     def _fixture():
-        with mock.patch(patch_target) as m:
+        with patch(patch_target) as m:
             yield m
     return _fixture
 
 
-def test_imports():
-    # dummy test to just make sure files import properly
-    # replace with real tests later
-    from reactive import kubernetes_worker as handlers
-    assert handlers
+@patch('os.listdir')
+@patch('os.remove')
+@patch('os.symlink')
+def test_configure_default_cni(os_symlink, os_remove, os_listdir):
+    os_listdir.return_value = ['05-default.conflist', '10-cni.conflist']
+    kube_control = endpoint_from_flag('kube-control.default_cni.available')
+    kube_control.get_default_cni.return_value = 'test-cni'
+    cni = endpoint_from_flag('cni.available')
+    cni.get_config.return_value = {
+        'cidr': '192.168.0.0/24',
+        'cni-conf-file': '10-cni.conflist'
+    }
+    kubernetes_worker.configure_default_cni()
+    os_remove.assert_called_once_with('/etc/cni/net.d/05-default.conflist')
+    os_symlink.assert_called_once_with(
+        '10-cni.conflist',
+        '/etc/cni/net.d/05-default.conflist'
+    )

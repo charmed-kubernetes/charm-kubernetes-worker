@@ -538,7 +538,8 @@ def watch_for_changes():
       'tls_client.ca.saved', 'tls_client.certs.saved',
       'kube-control.dns.available', 'kube-control.auth.available',
       'cni.available', 'kubernetes-worker.restart-needed',
-      'worker.auth.bootstrapped', 'endpoint.container-runtime.available')
+      'worker.auth.bootstrapped', 'endpoint.container-runtime.available',
+      'kube-control.default_cni.available')
 @when_not('kubernetes-worker.cloud.pending',
           'kubernetes-worker.cloud.blocked')
 def start_worker():
@@ -554,7 +555,8 @@ def start_worker():
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
     ingress_ip = get_ingress_address(kube_control.endpoint_name)
-    cluster_cidr = cni.get_config()['cidr']
+    default_cni = kube_control.get_default_cni()
+    cluster_cidr = cni.get_config(default=default_cni)['cidr']
 
     if cluster_cidr is None:
         hookenv.log('Waiting for cluster cidr.')
@@ -564,6 +566,7 @@ def start_worker():
     data_changed('kube-control.creds', creds)
 
     create_config(servers[get_unit_number() % len(servers)], creds)
+    configure_default_cni()
     configure_kubelet(dns, ingress_ip)
     configure_kube_proxy(configure_prefix, servers,
                          cluster_cidr)
@@ -1407,3 +1410,31 @@ def get_registry_location():
         registry = ""
 
     return registry
+
+
+def configure_default_cni():
+    """Set the default CNI configuration to be used by CNI clients
+    (kubelet, containerd).
+
+    CNI clients choose whichever CNI config in /etc/cni/net.d/ is
+    alphabetically first, so we accomplish this by creating a file named
+    /etc/cni/net.d/05-default.conflist, which is alphabetically earlier than
+    typical CNI config names, e.g. 10-flannel.conflist and 10-calico.conflist
+
+    The created 05-default.conflist file is a symlink to whichever CNI config
+    is actually going to be used.
+    """
+    # Clean up current default
+    cni_conf_dir = '/etc/cni/net.d'
+    for filename in os.listdir(cni_conf_dir):
+        if filename.startswith('05-default.'):
+            os.remove(cni_conf_dir + '/' + filename)
+
+    # Set new default
+    kube_control = endpoint_from_flag('kube-control.default_cni.available')
+    default_cni = kube_control.get_default_cni()
+    cni = endpoint_from_flag('cni.available')
+    cni_conf = cni.get_config(default=default_cni)
+    source = cni_conf['cni-conf-file']
+    dest = cni_conf_dir + '/' + '05-default.' + source.split('.')[-1]
+    os.symlink(source, dest)
