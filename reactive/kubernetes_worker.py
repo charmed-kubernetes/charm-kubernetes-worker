@@ -137,6 +137,20 @@ def upgrade_charm():
         set_state('kubernetes-master-worker-base.registry.configured')
         remove_state('kubernetes-worker.registry.configured')
 
+    # need to clear cni.available state if it's no longer accurate
+    if is_state('cni.available'):
+        cni = endpoint_from_flag('cni.available')
+        if not cni.config_available():
+            hookenv.log('cni.config_available() is False, clearing'
+                        + ' cni.available flag')
+            remove_state('cni.available')
+
+    # need to bump the kube-control relation in case
+    # kube-control.default_cni.available is not set when it should be
+    if is_state('kube-control.connected'):
+        kube_control = endpoint_from_flag('kube-control.connected')
+        kube_control.manage_flags()
+
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
     remove_state('kubernetes-worker.ingress.available')
