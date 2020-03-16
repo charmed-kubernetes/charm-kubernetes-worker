@@ -821,11 +821,11 @@ def configure_kubelet(dns, ingress_ip):
 
     # If present, ensure kubelet gets the pause container from the configured
     # registry. When not present, kubelet uses a default image location
-    # (currently k8s.gcr.io/pause:3.1).
+    # (currently k8s.gcr.io/pause:3.2).
     registry_location = get_registry_location()
     if registry_location:
         kubelet_opts['pod-infra-container-image'] = \
-            '{}/pause-{}:3.1'.format(registry_location, arch())
+            '{}/pause-{}:3.2'.format(registry_location, arch())
 
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
@@ -912,11 +912,17 @@ def render_and_launch_ingress():
             nginx_registry = registry_location
         else:
             nginx_registry = 'quay.io'
-        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.26.1',  # noqa
-                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.26.1',  # noqa
+        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.30.0',  # noqa
+                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.30.0',  # noqa
                   's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
                   'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
                  }
+        # NB: ingress >= 0.27 switched to alpine, where www-data uid is now 101
+        # https://github.com/kubernetes/ingress-nginx/releases/tag/nginx-0.27.0
+        if context['arch'] == 'amd64' or context['arch'] == 'arm64':
+            context['ingress_uid'] = '101'
+        else:
+            context['ingress_uid'] = '33'
         context['ingress_image'] = '{}/{}'.format(nginx_registry,
                                                   images.get(context['arch'],
                                                              images['amd64']))
@@ -1395,7 +1401,7 @@ def update_registry_location():
         runtime = endpoint_from_flag('endpoint.container-runtime.available')
         if runtime:
             # Construct and send the sandbox image (pause container) to our runtime
-            uri = '{}/pause-{}:3.1'.format(registry_location, arch())
+            uri = '{}/pause-{}:3.2'.format(registry_location, arch())
             runtime.set_config(
                 sandbox_image=uri
             )
