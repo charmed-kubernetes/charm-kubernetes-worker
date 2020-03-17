@@ -32,6 +32,8 @@ metadata:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+data:
+  use-forwarded-headers: "{{ use_forwarded_headers }}"
 
 ---
 kind: ConfigMap
