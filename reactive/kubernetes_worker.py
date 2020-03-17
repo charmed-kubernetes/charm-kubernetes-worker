@@ -937,6 +937,9 @@ def render_and_launch_ingress():
     else:
         context['daemonset_api_version'] = 'apps/v1'
         context['deployment_api_version'] = 'apps/v1'
+    context['use_forwarded_headers'] = "true" if config.get(
+        "ingress-use-forwarded-headers") else "false"
+
     manifest = addon_path.format('ingress-daemon-set.yaml')
     render('ingress-daemon-set.yaml', manifest, context)
     hookenv.log('Creating the ingress daemon set.')
