@@ -18,7 +18,7 @@ options:
       This option is now deprecated and has no effect.
   channel:
     type: string
-    default: "1.17/stable"
+    default: "1.18/stable"
     description: |
       Snap channel to install Kubernetes worker services from
   require-manual-upgrade:
@@ -38,6 +38,22 @@ options:
         --runtime-config=batch/v2alpha1=true --profiling=true
       Note: As of Kubernetes 1.10.x, many of Kubelet's args have been deprecated, and can
       be set with kubelet-extra-config instead.
+  ingress-default-ssl-certificate:
+    type: string
+    default: ""
+    description: |
+      SSL certificate to be used by the default HTTPS server. If one of the
+      flag ingress-default-ssl-certificate or ingress-default-ssl-key is not
+      provided ingress will use a self-signed certificate. This parameter is
+      specific to nginx-ingress-controller.
+  ingress-default-ssl-key:
+    type: string
+    default: ""
+    description: |
+      Private key to be used by the default HTTPS server. If one of the flag
+      ingress-default-ssl-certificate or ingress-default-ssl-key is not
+      provided ingress will use a self-signed certificate. This parameter is
+      specific to nginx-ingress-controller.
   ingress-ssl-passthrough:
     type: boolean
     default: false
@@ -54,6 +70,21 @@ options:
       to attempt auto-retrieval of intermediate certificates.  The default
       (false) is recommended for all production kubernetes installations, and
       any environment which does not have outbound Internet access.
+  ingress-use-forwarded-headers:
+    type: boolean
+    default: false
+    description: |
+      If true, NGINX passes the incoming X-Forwarded-* headers to upstreams. Use this
+      option when NGINX is behind another L7 proxy / load balancer that is setting
+      these headers.
+
+      If false, NGINX ignores incoming X-Forwarded-* headers, filling them with the
+      request information it sees. Use this option if NGINX is exposed directly to
+      the internet, or it's behind a L3/packet-based load balancer that doesn't alter
+      the source IP in the packets.
+
+      Reference: https://github.com/kubernetes/ingress-nginx/blob/a9c706be12a8be418c49ab1f60a02f52f9b14e55/
+      docs/user-guide/nginx-configuration/configmap.md#use-forwarded-headers.
   nginx-image:
     type: string
     default: "auto"

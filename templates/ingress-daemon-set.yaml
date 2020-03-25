@@ -5,6 +5,23 @@ metadata:
   labels:
     cdk-{{ juju_application }}-ingress: "true"
 
+{%- if default_ssl_certificate_option %}
+---
+kind: Secret
+apiVersion: v1
+type: Opaque
+metadata:
+  name: default-ssl-certificate
+  namespace: ingress-nginx-{{ juju_application }}
+  labels:
+    app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
+    app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
+    cdk-{{ juju_application }}-ingress: "true"
+data:
+  tls.crt: {{ default_ssl_certificate }}
+  tls.key: {{ default_ssl_key }}
+{%- endif %}
+
 ---
 kind: ConfigMap
 apiVersion: v1
@@ -15,6 +32,8 @@ metadata:
     app.kubernetes.io/name: ingress-nginx-{{ juju_application }}
     app.kubernetes.io/part-of: ingress-nginx-{{ juju_application }}
     cdk-{{ juju_application }}-ingress: "true"
+data:
+  use-forwarded-headers: "{{ use_forwarded_headers }}"
 
 ---
 kind: ConfigMap
@@ -234,14 +253,16 @@ spec:
             - --annotations-prefix=nginx.ingress.kubernetes.io
             - --enable-ssl-chain-completion={{ ssl_chain_completion }}
             - --enable-ssl-passthrough={{ enable_ssl_passthrough }}
+{%- if default_ssl_certificate_option %}
+            {{ default_ssl_certificate_option }}
+{%- endif %}
           securityContext:
             capabilities:
               drop:
                 - ALL
               add:
                 - NET_BIND_SERVICE
-            # www-data -> 33
-            runAsUser: 33
+            runAsUser: {{ ingress_uid }}
           env:
             - name: POD_NAME
               valueFrom:

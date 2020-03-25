@@ -22,6 +22,7 @@ import time
 import traceback
 import yaml
 
+from base64 import b64encode
 from subprocess import check_call, check_output
 from subprocess import CalledProcessError
 from socket import gethostname
@@ -135,6 +136,20 @@ def upgrade_charm():
     if is_state('kubernetes-worker.registry.configured'):
         set_state('kubernetes-master-worker-base.registry.configured')
         remove_state('kubernetes-worker.registry.configured')
+
+    # need to clear cni.available state if it's no longer accurate
+    if is_state('cni.available'):
+        cni = endpoint_from_flag('cni.available')
+        if not cni.config_available():
+            hookenv.log('cni.config_available() is False, clearing'
+                        + ' cni.available flag')
+            remove_state('cni.available')
+
+    # need to bump the kube-control relation in case
+    # kube-control.default_cni.available is not set when it should be
+    if is_state('kube-control.connected'):
+        kube_control = endpoint_from_flag('kube-control.connected')
+        kube_control.manage_flags()
 
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
@@ -537,7 +552,8 @@ def watch_for_changes():
       'tls_client.ca.saved', 'tls_client.certs.saved',
       'kube-control.dns.available', 'kube-control.auth.available',
       'cni.available', 'kubernetes-worker.restart-needed',
-      'worker.auth.bootstrapped', 'endpoint.container-runtime.available')
+      'worker.auth.bootstrapped', 'endpoint.container-runtime.available',
+      'kube-control.default_cni.available')
 @when_not('kubernetes-worker.cloud.pending',
           'kubernetes-worker.cloud.blocked')
 def start_worker():
@@ -553,7 +569,8 @@ def start_worker():
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
     ingress_ip = get_ingress_address(kube_control.endpoint_name)
-    cluster_cidr = cni.get_config()['cidr']
+    default_cni = kube_control.get_default_cni()
+    cluster_cidr = cni.get_config(default=default_cni)['cidr']
 
     if cluster_cidr is None:
         hookenv.log('Waiting for cluster cidr.')
@@ -563,6 +580,7 @@ def start_worker():
     data_changed('kube-control.creds', creds)
 
     create_config(servers[get_unit_number() % len(servers)], creds)
+    configure_default_cni()
     configure_kubelet(dns, ingress_ip)
     configure_kube_proxy(configure_prefix, servers,
                          cluster_cidr)
@@ -803,11 +821,11 @@ def configure_kubelet(dns, ingress_ip):
 
     # If present, ensure kubelet gets the pause container from the configured
     # registry. When not present, kubelet uses a default image location
-    # (currently k8s.gcr.io/pause:3.1).
+    # (currently k8s.gcr.io/pause:3.2).
     registry_location = get_registry_location()
     if registry_location:
         kubelet_opts['pod-infra-container-image'] = \
-            '{}/pause-{}:3.1'.format(registry_location, arch())
+            '{}/pause-{}:3.2'.format(registry_location, arch())
 
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
@@ -826,7 +844,9 @@ def toggle_ingress_state():
 @when_any('config.changed.default-backend-image',
           'config.changed.ingress-ssl-chain-completion',
           'config.changed.nginx-image',
-          'config.changed.ingress-ssl-passthrough')
+          'config.changed.ingress-ssl-passthrough',
+          'config.changed.ingress-default-ssl-certificate',
+          'config.changed.ingress-default-ssl-key')
 def reconfigure_ingress():
     remove_state('kubernetes-worker.ingress.available')
 
@@ -873,17 +893,36 @@ def render_and_launch_ingress():
         'ingress-ssl-chain-completion')
     context['enable_ssl_passthrough'] = config.get(
         'ingress-ssl-passthrough')
+    context['default_ssl_certificate_option'] = None
+    if config.get('ingress-default-ssl-certificate') and config.get(
+            'ingress-default-ssl-key'):
+        context['default_ssl_certificate'] = b64encode(
+            config.get('ingress-default-ssl-certificate').encode(
+                'utf-8')).decode('utf-8')
+        context['default_ssl_key'] = b64encode(
+            config.get('ingress-default-ssl-key').encode('utf-8')).decode(
+                'utf-8')
+        default_certificate_option = (
+            '- --default-ssl-certificate='
+            '$(POD_NAMESPACE)/default-ssl-certificate')
+        context['default_ssl_certificate_option'] = default_certificate_option
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
         if registry_location:
             nginx_registry = registry_location
         else:
             nginx_registry = 'quay.io'
-        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.26.1',  # noqa
-                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.26.1',  # noqa
+        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.30.0',  # noqa
+                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.30.0',  # noqa
                   's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
                   'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
                  }
+        # NB: ingress >= 0.27 switched to alpine, where www-data uid is now 101
+        # https://github.com/kubernetes/ingress-nginx/releases/tag/nginx-0.27.0
+        if context['arch'] == 'amd64' or context['arch'] == 'arm64':
+            context['ingress_uid'] = '101'
+        else:
+            context['ingress_uid'] = '33'
         context['ingress_image'] = '{}/{}'.format(nginx_registry,
                                                   images.get(context['arch'],
                                                              images['amd64']))
@@ -898,6 +937,9 @@ def render_and_launch_ingress():
     else:
         context['daemonset_api_version'] = 'apps/v1'
         context['deployment_api_version'] = 'apps/v1'
+    context['use_forwarded_headers'] = "true" if config.get(
+        "ingress-use-forwarded-headers") else "false"
+
     manifest = addon_path.format('ingress-daemon-set.yaml')
     render('ingress-daemon-set.yaml', manifest, context)
     hookenv.log('Creating the ingress daemon set.')
@@ -1362,7 +1404,7 @@ def update_registry_location():
         runtime = endpoint_from_flag('endpoint.container-runtime.available')
         if runtime:
             # Construct and send the sandbox image (pause container) to our runtime
-            uri = '{}/pause-{}:3.1'.format(registry_location, arch())
+            uri = '{}/pause-{}:3.2'.format(registry_location, arch())
             runtime.set_config(
                 sandbox_image=uri
             )
@@ -1391,3 +1433,31 @@ def get_registry_location():
         registry = ""
 
     return registry
+
+
+def configure_default_cni():
+    """Set the default CNI configuration to be used by CNI clients
+    (kubelet, containerd).
+
+    CNI clients choose whichever CNI config in /etc/cni/net.d/ is
+    alphabetically first, so we accomplish this by creating a file named
+    /etc/cni/net.d/05-default.conflist, which is alphabetically earlier than
+    typical CNI config names, e.g. 10-flannel.conflist and 10-calico.conflist
+
+    The created 05-default.conflist file is a symlink to whichever CNI config
+    is actually going to be used.
+    """
+    # Clean up current default
+    cni_conf_dir = '/etc/cni/net.d'
+    for filename in os.listdir(cni_conf_dir):
+        if filename.startswith('05-default.'):
+            os.remove(cni_conf_dir + '/' + filename)
+
+    # Set new default
+    kube_control = endpoint_from_flag('kube-control.default_cni.available')
+    default_cni = kube_control.get_default_cni()
+    cni = endpoint_from_flag('cni.available')
+    cni_conf = cni.get_config(default=default_cni)
+    source = cni_conf['cni-conf-file']
+    dest = cni_conf_dir + '/' + '05-default.' + source.split('.')[-1]
+    os.symlink(source, dest)
