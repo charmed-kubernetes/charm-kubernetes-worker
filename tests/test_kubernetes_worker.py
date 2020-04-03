@@ -12,6 +12,9 @@ def patch_fixture(patch_target):
     return _fixture
 
 
+kubectl = patch_fixture('reactive.kubernetes_worker.kubectl')
+
+
 @patch('os.listdir')
 @patch('os.remove')
 @patch('os.symlink')
@@ -30,3 +33,17 @@ def test_configure_default_cni(os_symlink, os_remove, os_listdir):
         '10-cni.conflist',
         '/etc/cni/net.d/05-default.conflist'
     )
+
+
+def test_series_upgrade(kubectl):
+    assert kubectl.call_count == 0
+    assert kubernetes_worker.service_pause.call_count == 0
+    assert kubernetes_worker.service_resume.call_count == 0
+    kubernetes_worker.pre_series_upgrade()
+    assert kubectl.call_count == 1
+    assert kubernetes_worker.service_pause.call_count == 2
+    assert kubernetes_worker.service_resume.call_count == 0
+    kubernetes_worker.post_series_upgrade()
+    assert kubectl.call_count == 2
+    assert kubernetes_worker.service_pause.call_count == 2
+    assert kubernetes_worker.service_resume.call_count == 2

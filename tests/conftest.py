@@ -2,6 +2,11 @@ import os
 import sys
 from unittest.mock import MagicMock
 
+
+def identity(x):
+    return x
+
+
 # mock dependencies which we don't care about covering in our tests
 ch = MagicMock()
 sys.modules['charmhelpers'] = ch
@@ -24,3 +29,9 @@ sys.modules['charms.reactive'] = charms.reactive
 sys.modules['charms.templating.jinja2'] = MagicMock()
 
 os.environ['JUJU_MODEL_UUID'] = 'test-1234'
+
+charms.reactive.when.return_value = identity
+charms.reactive.when_any.return_value = identity
+charms.reactive.when_not.return_value = identity
+charms.reactive.when_none.return_value = identity
+charms.reactive.hook.return_value = identity
