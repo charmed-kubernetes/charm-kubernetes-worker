@@ -41,6 +41,7 @@ from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
 from charmhelpers.core.host import service_stop, service_restart
+from charmhelpers.core.host import service_pause, service_resume
 from charmhelpers.contrib.charmsupport import nrpe
 
 from charms.layer.kubernetes_common import kubeclientconfig_path
@@ -157,6 +158,26 @@ def upgrade_charm():
     remove_state('worker.auth.bootstrapped')
     remove_state('nfs.configured')
     set_state('kubernetes-worker.restart-needed')
+
+
+@hook('pre-series-upgrade')
+def pre_series_upgrade():
+    # NB: We use --force here because unmanaged pods are going to die anyway
+    # when the node is shut down, and it's better to let drain cleanly
+    # terminate them. We use --delete-local-data because the dashboard, at
+    # least, uses local data (emptyDir); but local data is documented as being
+    # ephemeral anyway, so we can assume it should be ok.
+    kubectl('drain', get_node_name(), '--ignore-daemonsets', '--force',
+            '--delete-local-data')
+    service_pause('snap.kubelet.daemon')
+    service_pause('snap.kube-proxy.daemon')
+
+
+@hook('post-series-upgrade')
+def post_series_upgrade():
+    service_resume('snap.kubelet.daemon')
+    service_resume('snap.kube-proxy.daemon')
+    kubectl('uncordon', get_node_name())
 
 
 @when('kubernetes-worker.remove-old-ingress')
@@ -374,6 +395,10 @@ def charm_status():
     azure_joined = is_state('endpoint.azure.joined')
     cloud_blocked = is_state('kubernetes-worker.cloud.blocked')
 
+    if is_state('upgrade.series.in-progress'):
+        hookenv.status_set('blocked',
+                           'Series upgrade in progress')
+        return
     if not container_runtime_connected:
         hookenv.status_set('blocked',
                            'Connect a container runtime.')
@@ -555,7 +580,8 @@ def watch_for_changes():
       'worker.auth.bootstrapped', 'endpoint.container-runtime.available',
       'kube-control.default_cni.available')
 @when_not('kubernetes-worker.cloud.pending',
-          'kubernetes-worker.cloud.blocked')
+          'kubernetes-worker.cloud.blocked',
+          'upgrade.series.in-progress')
 def start_worker():
     ''' Start kubelet using the provided API and DNS info.'''
     # Note that the DNS server doesn't necessarily exist at this point. We know
