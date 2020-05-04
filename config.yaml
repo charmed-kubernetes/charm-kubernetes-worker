@@ -93,8 +93,11 @@ options:
     type: string
     default: "auto"
     description: |
-      Docker image to use for the nginx ingress controller. Auto will select an image
-      based on architecture.
+      Docker image to use for the nginx ingress controller. Using "auto" will select
+      an image based on architecture.
+      
+      Example:
+        quay.io/kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.32.0
   default-backend-image:
     type: string
     default: "auto"
