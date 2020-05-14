@@ -48,7 +48,7 @@ provides:
   cni:
     interface: kubernetes-cni
     scope: container
-  website:
+  ingress-proxy:
     interface: http
 resources:
   cni-amd64:
