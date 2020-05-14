@@ -1488,7 +1488,7 @@ def configure_default_cni():
     dest = cni_conf_dir + '/' + '05-default.' + source.split('.')[-1]
     os.symlink(source, dest)
 
+
 @when('ingress-proxy.available')
 def configure_ingress_proxy(ingress_proxy):
     ingress_proxy.configure(port='80')
-
