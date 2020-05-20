@@ -938,11 +938,12 @@ def render_and_launch_ingress():
             nginx_registry = registry_location
         else:
             nginx_registry = 'quay.io'
-        images = {'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.31.1',  # noqa
-                  'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.31.1',  # noqa
-                  's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
-                  'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
-                 }
+        images = {
+            'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.31.1',  # noqa
+            'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.31.1',  # noqa
+            's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
+            'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
+        }
         # NB: ingress >= 0.27 switched to alpine, where www-data uid is now 101
         # https://github.com/kubernetes/ingress-nginx/releases/tag/nginx-0.27.0
         if context['arch'] == 'amd64' or context['arch'] == 'arm64':
