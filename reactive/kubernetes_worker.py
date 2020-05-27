@@ -44,6 +44,8 @@ from charmhelpers.core.host import service_stop, service_restart
 from charmhelpers.core.host import service_pause, service_resume
 from charmhelpers.contrib.charmsupport import nrpe
 
+from charms.layer import kubernetes_common
+
 from charms.layer.kubernetes_common import kubeclientconfig_path
 from charms.layer.kubernetes_common import migrate_resource_checksums
 from charms.layer.kubernetes_common import check_resources_for_upgrade_needed
@@ -546,13 +548,12 @@ def watch_for_changes():
     worker services '''
     kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
-    cni = endpoint_from_flag('cni.available')
     container_runtime = \
         endpoint_from_flag('endpoint.container-runtime.available')
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    cluster_cidr = cni.get_config().get('cidr')
+    cluster_cidr = kubernetes_common.cluster_cidr()
     container_runtime_name = \
         container_runtime.get_runtime()
     container_runtime_socket = \
@@ -590,13 +591,11 @@ def start_worker():
     # the correct DNS even though the server isn't ready yet.
     kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
-    cni = endpoint_from_flag('cni.available')
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
     ingress_ip = get_ingress_address(kube_control.endpoint_name)
-    default_cni = kube_control.get_default_cni()
-    cluster_cidr = cni.get_config(default=default_cni)['cidr']
+    cluster_cidr = kubernetes_common.cluster_cidr()
 
     if cluster_cidr is None:
         hookenv.log('Waiting for cluster cidr.')
@@ -815,6 +814,9 @@ def configure_kubelet(dns, ingress_ip):
             feature_gates['DevicePlugins'] = True
         if feature_gates:
             kubelet_config['featureGates'] = feature_gates
+        if kubernetes_common.is_dual_stack(kubernetes_common.cluster_cidr()):
+            feature_gates = kubelet_config.setdefault('featureGates', {})
+            feature_gates['IPv6DualStack'] = True
 
         # Workaround for DNS on bionic
         # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
