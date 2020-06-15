@@ -601,6 +601,9 @@ def start_worker():
         hookenv.log('Waiting for cluster cidr.')
         return
 
+    if kubernetes_common.is_ipv6(cluster_cidr):
+        kubernetes_common.enable_ipv6_forwarding()
+
     creds = db.get('credentials')
     data_changed('kube-control.creds', creds)
 
