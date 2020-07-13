@@ -50,7 +50,6 @@ from charms.layer.kubernetes_common import kubeclientconfig_path
 from charms.layer.kubernetes_common import migrate_resource_checksums
 from charms.layer.kubernetes_common import check_resources_for_upgrade_needed
 from charms.layer.kubernetes_common import calculate_and_store_resource_checksums  # noqa
-from charms.layer.kubernetes_common import get_ingress_address
 from charms.layer.kubernetes_common import create_kubeconfig
 from charms.layer.kubernetes_common import kubectl
 from charms.layer.kubernetes_common import arch, get_node_name
@@ -512,23 +511,34 @@ def update_kubelet_status():
     hookenv.status_set('active', 'Kubernetes worker running.')
 
 
-@when('certificates.available', 'kube-control.connected')
+def get_node_ip():
+    '''Determines the preferred NodeIP value for this node.'''
+    cluster_cidr = kubernetes_common.cluster_cidr()
+    if not cluster_cidr:
+        return None
+    if kubernetes_common.is_ipv6_preferred(cluster_cidr):
+        return kubernetes_common.get_ingress_address6('kube-control')
+    else:
+        return kubernetes_common.get_ingress_address('kube-control')
+
+
+@when('certificates.available', 'kube-control.connected',
+      'cni.available', 'kube-control.dns.available')
 def send_data():
     '''Send the data that is required to create a server certificate for
     this server.'''
-    kube_control = endpoint_from_flag('kube-control.connected')
-
     # Use the public ip of this unit as the Common Name for the certificate.
     common_name = hookenv.unit_public_ip()
 
-    ingress_ip = get_ingress_address(kube_control.endpoint_name)
+    ingress_ip = get_node_ip()
+    bind_addrs = kubernetes_common.get_bind_addrs()
 
     # Create SANs that the tls layer will add to the server cert.
     sans = [
         hookenv.unit_public_ip(),
         ingress_ip,
         gethostname()
-    ]
+    ] + bind_addrs
 
     # Request a server cert with this information.
     layer.tls_client.request_server_cert(common_name, sorted(set(sans)),
@@ -594,7 +604,7 @@ def start_worker():
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    ingress_ip = get_ingress_address(kube_control.endpoint_name)
+    ingress_ip = get_node_ip()
     cluster_cidr = kubernetes_common.cluster_cidr()
 
     if cluster_cidr is None:
