@@ -131,8 +131,10 @@ def upgrade_charm():
         remove_state('kubernetes-worker.ingress.enabled')
 
     # force certs to be updated
-    if is_state('certificates.available') and \
-       is_state('kube-control.connected'):
+    if all(is_state(flag) for flag in ('certificates.available',
+                                       'kube-control.connected',
+                                       'cni.available',
+                                       'kube-control.dns.available')):
         send_data()
 
     if is_state('kubernetes-worker.registry.configured'):
