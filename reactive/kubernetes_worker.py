@@ -789,18 +789,32 @@ def configure_kubelet(dns, ingress_ip):
                     'clientCAFile': str(ca_crt_path)
                 }
             },
+            # NB: authz webhook config tells the kubelet to ask the api server
+            # if a request is authorized; it is not related to the authn
+            # webhook config of the k8s master services.
+            'authorization': {
+                'mode': 'Webhook'
+            },
             'clusterDomain': dns['domain'],
             'failSwapOn': False,
             'port': 10250,
+            'protectKernelDefaults': True,
+            'readOnlyPort': 0,
             'tlsCertFile': str(server_crt_path),
             'tlsPrivateKeyFile': str(server_key_path)
         }
         if dns['enable-kube-dns']:
             kubelet_config['clusterDNS'] = [dns['sdn-ip']]
+
+        # Handle feature gates
+        feature_gates = {}
+        if get_version('kubelet') >= (1, 19):
+            # NB: required for CIS compliance
+            feature_gates['RotateKubeletServerCertificate'] = True
         if is_state('kubernetes-worker.gpu.enabled'):
-            kubelet_config['featureGates'] = {
-                'DevicePlugins': True
-            }
+            feature_gates['DevicePlugins'] = True
+        if feature_gates:
+            kubelet_config['featureGates'] = feature_gates
 
         # Workaround for DNS on bionic
         # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
