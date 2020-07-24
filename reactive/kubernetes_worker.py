@@ -789,6 +789,9 @@ def configure_kubelet(dns, ingress_ip):
                     'clientCAFile': str(ca_crt_path)
                 }
             },
+            # NB: authz webhook config tells the kubelet to ask the api server
+            # if a request is authorized; it is not related to the authn
+            # webhook config of the k8s master services.
             'authorization': {
                 'mode': 'Webhook'
             },
