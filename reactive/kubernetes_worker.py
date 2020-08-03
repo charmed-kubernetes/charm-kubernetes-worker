@@ -44,11 +44,12 @@ from charmhelpers.core.host import service_stop, service_restart
 from charmhelpers.core.host import service_pause, service_resume
 from charmhelpers.contrib.charmsupport import nrpe
 
+from charms.layer import kubernetes_common
+
 from charms.layer.kubernetes_common import kubeclientconfig_path
 from charms.layer.kubernetes_common import migrate_resource_checksums
 from charms.layer.kubernetes_common import check_resources_for_upgrade_needed
 from charms.layer.kubernetes_common import calculate_and_store_resource_checksums  # noqa
-from charms.layer.kubernetes_common import get_ingress_address
 from charms.layer.kubernetes_common import create_kubeconfig
 from charms.layer.kubernetes_common import kubectl
 from charms.layer.kubernetes_common import arch, get_node_name
@@ -130,8 +131,10 @@ def upgrade_charm():
         remove_state('kubernetes-worker.ingress.enabled')
 
     # force certs to be updated
-    if is_state('certificates.available') and \
-       is_state('kube-control.connected'):
+    if all(is_state(flag) for flag in ('certificates.available',
+                                       'kube-control.connected',
+                                       'cni.available',
+                                       'kube-control.dns.available')):
         send_data()
 
     if is_state('kubernetes-worker.registry.configured'):
@@ -510,23 +513,34 @@ def update_kubelet_status():
     hookenv.status_set('active', 'Kubernetes worker running.')
 
 
-@when('certificates.available', 'kube-control.connected')
+def get_node_ip():
+    '''Determines the preferred NodeIP value for this node.'''
+    cluster_cidr = kubernetes_common.cluster_cidr()
+    if not cluster_cidr:
+        return None
+    if kubernetes_common.is_ipv6_preferred(cluster_cidr):
+        return kubernetes_common.get_ingress_address6('kube-control')
+    else:
+        return kubernetes_common.get_ingress_address('kube-control')
+
+
+@when('certificates.available', 'kube-control.connected',
+      'cni.available', 'kube-control.dns.available')
 def send_data():
     '''Send the data that is required to create a server certificate for
     this server.'''
-    kube_control = endpoint_from_flag('kube-control.connected')
-
     # Use the public ip of this unit as the Common Name for the certificate.
     common_name = hookenv.unit_public_ip()
 
-    ingress_ip = get_ingress_address(kube_control.endpoint_name)
+    ingress_ip = get_node_ip()
+    bind_addrs = kubernetes_common.get_bind_addrs()
 
     # Create SANs that the tls layer will add to the server cert.
     sans = [
         hookenv.unit_public_ip(),
         ingress_ip,
         gethostname()
-    ]
+    ] + bind_addrs
 
     # Request a server cert with this information.
     layer.tls_client.request_server_cert(common_name, sorted(set(sans)),
@@ -546,13 +560,12 @@ def watch_for_changes():
     worker services '''
     kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
-    cni = endpoint_from_flag('cni.available')
     container_runtime = \
         endpoint_from_flag('endpoint.container-runtime.available')
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    cluster_cidr = cni.get_config().get('cidr')
+    cluster_cidr = kubernetes_common.cluster_cidr()
     container_runtime_name = \
         container_runtime.get_runtime()
     container_runtime_socket = \
@@ -590,17 +603,18 @@ def start_worker():
     # the correct DNS even though the server isn't ready yet.
     kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
-    cni = endpoint_from_flag('cni.available')
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    ingress_ip = get_ingress_address(kube_control.endpoint_name)
-    default_cni = kube_control.get_default_cni()
-    cluster_cidr = cni.get_config(default=default_cni)['cidr']
+    ingress_ip = get_node_ip()
+    cluster_cidr = kubernetes_common.cluster_cidr()
 
     if cluster_cidr is None:
         hookenv.log('Waiting for cluster cidr.')
         return
+
+    if kubernetes_common.is_ipv6(cluster_cidr):
+        kubernetes_common.enable_ipv6_forwarding()
 
     creds = db.get('credentials')
     data_changed('kube-control.creds', creds)
@@ -815,6 +829,9 @@ def configure_kubelet(dns, ingress_ip):
             feature_gates['DevicePlugins'] = True
         if feature_gates:
             kubelet_config['featureGates'] = feature_gates
+        if kubernetes_common.is_dual_stack(kubernetes_common.cluster_cidr()):
+            feature_gates = kubelet_config.setdefault('featureGates', {})
+            feature_gates['IPv6DualStack'] = True
 
         # Workaround for DNS on bionic
         # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
