@@ -882,7 +882,7 @@ def configure_kubelet(dns, ingress_ip):
     registry_location = get_registry_location()
     if registry_location:
         kubelet_opts['pod-infra-container-image'] = \
-            '{}/pause-{}:3.2'.format(registry_location, arch())
+            '{}/pause:3.2'.format(registry_location)
 
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
@@ -965,25 +965,19 @@ def render_and_launch_ingress():
         context['default_ssl_certificate_option'] = default_certificate_option
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        if registry_location:
-            nginx_registry = registry_location
-        else:
-            nginx_registry = 'quay.io'
-        images = {
-            'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.31.1',  # noqa
-            'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.31.1',  # noqa
-            's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
-            'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
-        }
-        # NB: ingress >= 0.27 switched to alpine, where www-data uid is now 101
-        # https://github.com/kubernetes/ingress-nginx/releases/tag/nginx-0.27.0
-        if context['arch'] == 'amd64' or context['arch'] == 'arm64':
-            context['ingress_uid'] = '101'
-        else:
+        if context['arch'] == 'ppc64el':
+            # multi-arch image doesn't include ppc64le, have to use an older version
             context['ingress_uid'] = '33'
-        context['ingress_image'] = '{}/{}'.format(nginx_registry,
-                                                  images.get(context['arch'],
-                                                             images['amd64']))
+            context['ingress_image'] = '/'.join([
+                registry_location or 'quay.io',
+                'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',
+            ])
+        else:
+            context['ingress_uid'] = '101'
+            context['ingress_image'] = '/'.join([
+                registry_location or 'us.gcr.io',
+                'k8s-artifacts-prod/ingress-nginx/controller:v0.34.1',
+            ])
 
     kubelet_version = get_version('kubelet')
     if kubelet_version < (1, 9):
@@ -1462,7 +1456,7 @@ def update_registry_location():
         runtime = endpoint_from_flag('endpoint.container-runtime.available')
         if runtime:
             # Construct and send the sandbox image (pause container) to our runtime
-            uri = '{}/pause-{}:3.2'.format(registry_location, arch())
+            uri = '{}/pause:3.2'.format(registry_location)
             runtime.set_config(
                 sandbox_image=uri
             )
