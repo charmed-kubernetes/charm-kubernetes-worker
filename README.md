@@ -12,3 +12,11 @@ and linked with an SDN-Plugin and a container runtime such as
 
 This charm is a component of Charmed Kubernetes. For full information,
 please visit the [official Charmed Kubernetes docs](https://www.ubuntu.com/kubernetes/docs/charm-kubernetes-worker).
+
+## Developers
+
+### Building the charm
+
+```
+make charm
+```
