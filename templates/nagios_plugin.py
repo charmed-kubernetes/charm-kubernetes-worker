@@ -4,7 +4,7 @@
 
 import nagios_plugin3
 import yaml
-from subprocess import check_output
+from subprocess import check_output, CalledProcessError
 
 snap_resources = ['kubectl', 'kubelet', 'kube-proxy']
 
@@ -21,7 +21,11 @@ def check_snaps_installed():
 
 
 def check_node(node):
-    checks = [{'name': 'MemoryPressure',
+    checks = [{'name': 'Ready',
+               'expected': 'True',
+               'type': 'error',
+               'error': 'Node Not Ready'},
+              {'name': 'MemoryPressure',
                'expected': 'False',
                'type': 'warn',
                'error': 'Memory Pressure'},
@@ -33,10 +37,7 @@ def check_node(node):
                'expected': 'False',
                'type': 'warn',
                'error': 'PID Pressure'},
-              {'name': 'Ready',
-               'expected': 'True',
-               'type': 'error',
-               'error': 'Node Not Ready'}]
+              ]
     msg = []
     error = False
     for check in checks:
@@ -63,20 +64,21 @@ def check_node(node):
 
 
 def verify_node_registered_and_ready():
+    node = None
     try:
-        cmd = "/snap/bin/kubectl --kubeconfig /var/lib/nagios/.kube/config" \
-              " get no -o=yaml"
-        y = yaml.load(check_output(cmd.split()))
-    except Exception:
+        cmd = [
+            "/snap/bin/kubectl", "--kubeconfig", "/var/lib/nagios/.kube/config"
+            "get", "no", "{{node_name}}", "-o=yaml"
+        ]
+        node = yaml.load(check_output(cmd))
+    except CalledProcessError as e:
+        if "not found" in e.stderr:
+            raise nagios_plugin3.CriticalError("Unable to find "
+                                               "node registered on API server")
+    if not node:
         raise nagios_plugin3.CriticalError("Unable to run kubectl "
                                            "and parse output")
-    for node in y['items']:
-        if node['metadata']['name'] == '{{node_name}}':
-            check_node(node)
-            return
-    else:
-        raise nagios_plugin3.CriticalError("Unable to find "
-                                           "node registered on API server")
+    return check_node(node)
 
 
 def main():
