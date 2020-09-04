@@ -41,13 +41,15 @@ from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
 from charmhelpers.core.host import service_stop, service_restart
+from charmhelpers.core.host import service_pause, service_resume
 from charmhelpers.contrib.charmsupport import nrpe
+
+from charms.layer import kubernetes_common
 
 from charms.layer.kubernetes_common import kubeclientconfig_path
 from charms.layer.kubernetes_common import migrate_resource_checksums
 from charms.layer.kubernetes_common import check_resources_for_upgrade_needed
 from charms.layer.kubernetes_common import calculate_and_store_resource_checksums  # noqa
-from charms.layer.kubernetes_common import get_ingress_address
 from charms.layer.kubernetes_common import create_kubeconfig
 from charms.layer.kubernetes_common import kubectl
 from charms.layer.kubernetes_common import arch, get_node_name
@@ -129,8 +131,10 @@ def upgrade_charm():
         remove_state('kubernetes-worker.ingress.enabled')
 
     # force certs to be updated
-    if is_state('certificates.available') and \
-       is_state('kube-control.connected'):
+    if all(is_state(flag) for flag in ('certificates.available',
+                                       'kube-control.connected',
+                                       'cni.available',
+                                       'kube-control.dns.available')):
         send_data()
 
     if is_state('kubernetes-worker.registry.configured'):
@@ -157,6 +161,26 @@ def upgrade_charm():
     remove_state('worker.auth.bootstrapped')
     remove_state('nfs.configured')
     set_state('kubernetes-worker.restart-needed')
+
+
+@hook('pre-series-upgrade')
+def pre_series_upgrade():
+    # NB: We use --force here because unmanaged pods are going to die anyway
+    # when the node is shut down, and it's better to let drain cleanly
+    # terminate them. We use --delete-local-data because the dashboard, at
+    # least, uses local data (emptyDir); but local data is documented as being
+    # ephemeral anyway, so we can assume it should be ok.
+    kubectl('drain', get_node_name(), '--ignore-daemonsets', '--force',
+            '--delete-local-data')
+    service_pause('snap.kubelet.daemon')
+    service_pause('snap.kube-proxy.daemon')
+
+
+@hook('post-series-upgrade')
+def post_series_upgrade():
+    service_resume('snap.kubelet.daemon')
+    service_resume('snap.kube-proxy.daemon')
+    kubectl('uncordon', get_node_name())
 
 
 @when('kubernetes-worker.remove-old-ingress')
@@ -374,6 +398,10 @@ def charm_status():
     azure_joined = is_state('endpoint.azure.joined')
     cloud_blocked = is_state('kubernetes-worker.cloud.blocked')
 
+    if is_state('upgrade.series.in-progress'):
+        hookenv.status_set('blocked',
+                           'Series upgrade in progress')
+        return
     if not container_runtime_connected:
         hookenv.status_set('blocked',
                            'Connect a container runtime.')
@@ -485,23 +513,34 @@ def update_kubelet_status():
     hookenv.status_set('active', 'Kubernetes worker running.')
 
 
-@when('certificates.available', 'kube-control.connected')
+def get_node_ip():
+    '''Determines the preferred NodeIP value for this node.'''
+    cluster_cidr = kubernetes_common.cluster_cidr()
+    if not cluster_cidr:
+        return None
+    if kubernetes_common.is_ipv6_preferred(cluster_cidr):
+        return kubernetes_common.get_ingress_address6('kube-control')
+    else:
+        return kubernetes_common.get_ingress_address('kube-control')
+
+
+@when('certificates.available', 'kube-control.connected',
+      'cni.available', 'kube-control.dns.available')
 def send_data():
     '''Send the data that is required to create a server certificate for
     this server.'''
-    kube_control = endpoint_from_flag('kube-control.connected')
-
     # Use the public ip of this unit as the Common Name for the certificate.
     common_name = hookenv.unit_public_ip()
 
-    ingress_ip = get_ingress_address(kube_control.endpoint_name)
+    ingress_ip = get_node_ip()
+    bind_addrs = kubernetes_common.get_bind_addrs()
 
     # Create SANs that the tls layer will add to the server cert.
     sans = [
         hookenv.unit_public_ip(),
         ingress_ip,
         gethostname()
-    ]
+    ] + bind_addrs
 
     # Request a server cert with this information.
     layer.tls_client.request_server_cert(common_name, sorted(set(sans)),
@@ -521,13 +560,12 @@ def watch_for_changes():
     worker services '''
     kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
-    cni = endpoint_from_flag('cni.available')
     container_runtime = \
         endpoint_from_flag('endpoint.container-runtime.available')
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    cluster_cidr = cni.get_config().get('cidr')
+    cluster_cidr = kubernetes_common.cluster_cidr()
     container_runtime_name = \
         container_runtime.get_runtime()
     container_runtime_socket = \
@@ -555,7 +593,8 @@ def watch_for_changes():
       'worker.auth.bootstrapped', 'endpoint.container-runtime.available',
       'kube-control.default_cni.available')
 @when_not('kubernetes-worker.cloud.pending',
-          'kubernetes-worker.cloud.blocked')
+          'kubernetes-worker.cloud.blocked',
+          'upgrade.series.in-progress')
 def start_worker():
     ''' Start kubelet using the provided API and DNS info.'''
     # Note that the DNS server doesn't necessarily exist at this point. We know
@@ -564,17 +603,18 @@ def start_worker():
     # the correct DNS even though the server isn't ready yet.
     kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
-    cni = endpoint_from_flag('cni.available')
 
     servers = get_kube_api_servers(kube_api)
     dns = kube_control.get_dns()
-    ingress_ip = get_ingress_address(kube_control.endpoint_name)
-    default_cni = kube_control.get_default_cni()
-    cluster_cidr = cni.get_config(default=default_cni)['cidr']
+    ingress_ip = get_node_ip()
+    cluster_cidr = kubernetes_common.cluster_cidr()
 
     if cluster_cidr is None:
         hookenv.log('Waiting for cluster cidr.')
         return
+
+    if kubernetes_common.is_ipv6(cluster_cidr):
+        kubernetes_common.enable_ipv6_forwarding()
 
     creds = db.get('credentials')
     data_changed('kube-control.creds', creds)
@@ -763,18 +803,35 @@ def configure_kubelet(dns, ingress_ip):
                     'clientCAFile': str(ca_crt_path)
                 }
             },
+            # NB: authz webhook config tells the kubelet to ask the api server
+            # if a request is authorized; it is not related to the authn
+            # webhook config of the k8s master services.
+            'authorization': {
+                'mode': 'Webhook'
+            },
             'clusterDomain': dns['domain'],
             'failSwapOn': False,
             'port': 10250,
+            'protectKernelDefaults': True,
+            'readOnlyPort': 0,
             'tlsCertFile': str(server_crt_path),
             'tlsPrivateKeyFile': str(server_key_path)
         }
         if dns['enable-kube-dns']:
             kubelet_config['clusterDNS'] = [dns['sdn-ip']]
+
+        # Handle feature gates
+        feature_gates = {}
+        if get_version('kubelet') >= (1, 19):
+            # NB: required for CIS compliance
+            feature_gates['RotateKubeletServerCertificate'] = True
         if is_state('kubernetes-worker.gpu.enabled'):
-            kubelet_config['featureGates'] = {
-                'DevicePlugins': True
-            }
+            feature_gates['DevicePlugins'] = True
+        if feature_gates:
+            kubelet_config['featureGates'] = feature_gates
+        if kubernetes_common.is_dual_stack(kubernetes_common.cluster_cidr()):
+            feature_gates = kubelet_config.setdefault('featureGates', {})
+            feature_gates['IPv6DualStack'] = True
 
         # Workaround for DNS on bionic
         # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
@@ -825,7 +882,7 @@ def configure_kubelet(dns, ingress_ip):
     registry_location = get_registry_location()
     if registry_location:
         kubelet_opts['pod-infra-container-image'] = \
-            '{}/pause-{}:3.2'.format(registry_location, arch())
+            '{}/pause:3.2'.format(registry_location)
 
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
@@ -908,25 +965,19 @@ def render_and_launch_ingress():
         context['default_ssl_certificate_option'] = default_certificate_option
     context['ingress_image'] = config.get('nginx-image')
     if context['ingress_image'] == "" or context['ingress_image'] == "auto":
-        if registry_location:
-            nginx_registry = registry_location
-        else:
-            nginx_registry = 'quay.io'
-        images = {
-            'amd64': 'kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.30.0',  # noqa
-            'arm64': 'kubernetes-ingress-controller/nginx-ingress-controller-arm64:0.30.0',  # noqa
-            's390x': 'kubernetes-ingress-controller/nginx-ingress-controller-s390x:0.20.0',  # noqa
-            'ppc64el': 'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',  # noqa
-        }
-        # NB: ingress >= 0.27 switched to alpine, where www-data uid is now 101
-        # https://github.com/kubernetes/ingress-nginx/releases/tag/nginx-0.27.0
-        if context['arch'] == 'amd64' or context['arch'] == 'arm64':
-            context['ingress_uid'] = '101'
-        else:
+        if context['arch'] == 'ppc64el':
+            # multi-arch image doesn't include ppc64le, have to use an older version
             context['ingress_uid'] = '33'
-        context['ingress_image'] = '{}/{}'.format(nginx_registry,
-                                                  images.get(context['arch'],
-                                                             images['amd64']))
+            context['ingress_image'] = '/'.join([
+                registry_location or 'quay.io',
+                'kubernetes-ingress-controller/nginx-ingress-controller-ppc64le:0.20.0',
+            ])
+        else:
+            context['ingress_uid'] = '101'
+            context['ingress_image'] = '/'.join([
+                registry_location or 'us.gcr.io',
+                'k8s-artifacts-prod/ingress-nginx/controller:v0.34.1',
+            ])
 
     kubelet_version = get_version('kubelet')
     if kubelet_version < (1, 9):
@@ -1405,7 +1456,7 @@ def update_registry_location():
         runtime = endpoint_from_flag('endpoint.container-runtime.available')
         if runtime:
             # Construct and send the sandbox image (pause container) to our runtime
-            uri = '{}/pause-{}:3.2'.format(registry_location, arch())
+            uri = '{}/pause:3.2'.format(registry_location)
             runtime.set_config(
                 sandbox_image=uri
             )
