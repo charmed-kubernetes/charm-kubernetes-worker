@@ -1090,10 +1090,11 @@ def update_nrpe_config():
         server = servers[get_unit_number() % len(servers)]
         create_kubeconfig(nrpe_kubeconfig_path, server, ca_crt_path,
                           token=creds['client_token'], user='nagios')
-        # Make the config dir owned by the nagios user.
-        cmd = ['chown', '-R', 'nagios:nagios',
-               os.path.dirname(nrpe_kubeconfig_path)]
-        check_call(cmd)
+        # Make sure Nagios dirs are the correct permissions.
+        cmd = ['chown', '-R', 'nagios:nagios']
+        for p in ['/var/lib/nagios/', os.path.dirname(nrpe_kubeconfig_path)]:
+            if os.path.exists(p):
+                check_call(cmd + [p])
 
         remove_state('nrpe-external-master.reconfigure')
         set_state('nrpe-external-master.initial-config')
