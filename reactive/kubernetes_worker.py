@@ -1112,7 +1112,7 @@ def remove_nrpe_config():
 
     for service in worker_services:
         nrpe_setup.remove_check(shortname=service)
-    nrpe_setup.remove_check('node')
+    nrpe_setup.remove_check(shortname='node')
 
 
 @when('nvidia.ready')
