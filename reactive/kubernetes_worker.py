@@ -67,6 +67,7 @@ from charms.layer.kubernetes_common import server_key_path
 from charms.layer.kubernetes_common import client_crt_path
 from charms.layer.kubernetes_common import client_key_path
 from charms.layer.kubernetes_common import get_unit_number
+from charms.layer.kubernetes_common import _get_vmware_uuid
 
 from charms.layer.nagios import install_nagios_plugin_from_text
 from charms.layer.nagios import remove_nagios_plugin
@@ -779,9 +780,7 @@ def configure_kubelet(dns, ingress_ip):
         # vsphere just needs to be joined on the worker (vs 'ready')
         kubelet_opts['cloud-provider'] = 'vsphere'
         # NB: vsphere maps node product-id to its uuid (no config file needed).
-        uuid_file = '/sys/class/dmi/id/product_uuid'
-        with open(uuid_file, 'r') as f:
-            uuid = f.read().strip()
+        uuid = _get_vmware_uuid()
         kubelet_opts['provider-id'] = 'vsphere://{}'.format(uuid)
     elif is_state('endpoint.azure.ready'):
         azure = endpoint_from_flag('endpoint.azure.ready')
