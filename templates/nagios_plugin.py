@@ -67,7 +67,7 @@ def verify_node_registered_and_ready():
     node = None
     try:
         cmd = [
-            "/snap/bin/kubectl", "--kubeconfig", "/var/lib/nagios/.kube/config"
+            "/snap/bin/kubectl", "--kubeconfig", "/var/lib/nagios/.kube/config",
             "get", "no", "{{node_name}}", "-o=yaml"
         ]
         node = yaml.load(check_output(cmd))
