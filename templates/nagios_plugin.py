@@ -21,6 +21,7 @@ def check_snaps_installed():
 
 
 def check_node(node):
+    # Note: Keep the Ready check first since all checks will fail when not Ready
     checks = [{'name': 'Ready',
                'expected': 'True',
                'type': 'error',
