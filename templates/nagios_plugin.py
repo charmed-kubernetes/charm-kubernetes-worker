@@ -4,7 +4,7 @@
 
 import nagios_plugin3
 import yaml
-from subprocess import check_output, CalledProcessError
+from subprocess import check_output, CalledProcessError, PIPE
 
 snap_resources = ['kubectl', 'kubelet', 'kube-proxy']
 
@@ -71,9 +71,10 @@ def verify_node_registered_and_ready():
             "/snap/bin/kubectl", "--kubeconfig", "/var/lib/nagios/.kube/config",
             "get", "no", "{{node_name}}", "-o=yaml"
         ]
-        node = yaml.load(check_output(cmd))
+        node = yaml.safe_load(check_output(cmd, stderr=PIPE))
     except CalledProcessError as e:
-        if "not found" in e.stderr:
+        err = e.stderr.decode('UTF-8')
+        if "not found" in err:
             raise nagios_plugin3.CriticalError("Unable to find "
                                                "node registered on API server")
     if not node:
