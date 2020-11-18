@@ -36,7 +36,7 @@ from charms.reactive import remove_state, clear_flag
 from charms.reactive import set_state, set_flag
 from charms.reactive import is_state
 from charms.reactive import when, when_any, when_not, when_none
-from charms.reactive import data_changed
+from charms.reactive import data_changed, is_data_changed
 from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
@@ -289,19 +289,8 @@ def safely_join_cohort():
     '''
     kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
 
-    # It's possible to join a cohort before snapd knows about the snap proxy.
-    # When this happens, we'll join a cohort, yet install default snaps. We
-    # won't refresh those until the k8s-master keys change. Ensure we always
-    # check for available refreshes even if the master keys haven't changed.
-    force_join = False
-    for snapname in cohort_snaps:
-        if snap.is_refresh_available(snapname):
-            force_join = True
-            break
-
     cohort_keys = kube_control.cohort_keys
-    # NB: initial data-changed is always true
-    if data_changed('master-cohorts', cohort_keys) or force_join:
+    if is_data_changed('master-cohorts', cohort_keys):
         clear_flag('kubernetes-worker.cohorts.joined')
         charms.coordinator.acquire('cohort')
 
@@ -319,11 +308,37 @@ def join_or_update_cohorts():
     kube_control = endpoint_from_flag('kube-control.cohort_keys.available')
     cohort_keys = kube_control.cohort_keys
     for snapname in cohort_snaps:
-        hookenv.status_set('maintenance', 'Joining snap cohort.')
+        hookenv.status_set('maintenance', 'Joining cohort for {}.'.format(snapname))
         cohort_key = cohort_keys[snapname]
-        snap.join_cohort_snapshot(snapname, cohort_key)
-    hookenv.log('{} has joined the snap cohort'.format(hookenv.local_unit()))
+        for delay in (5, 30, 60):
+            try:
+                snap.join_cohort_snapshot(snapname, cohort_key)
+                hookenv.log('Joined cohort for {}'.format(snapname))
+                break
+            except subprocess.CalledProcessError:
+                hookenv.log('Error joining cohort for {}'.format(snapname),
+                            level=hookenv.ERROR)
+                hookenv.status_set('maintenance',
+                                   'Error joining cohort for {} (see logs), '
+                                   'will retry.'.format(snapname))
+                time.sleep(delay)
+        else:
+            set_flag('kubernetes-worker.cohorts.failed')
+            return
+    # Update our cache of the cohort keys, now that they're successfully applied.
+    data_changed('master-cohorts', cohort_keys)
     set_flag('kubernetes-worker.cohorts.joined')
+    clear_flag('kubernetes-worker.cohorts.failed')
+
+
+@when_none('coordinator.granted.cohort',
+           'coordinator.requested.cohort')
+@when('kubernetes-worker.cohorts.failed')
+def reaquire_coordinator_lock():
+    # We can't do this in the same hook that the cohort join failed,
+    # because if we request the lock when we already have it, it's
+    # treated as a no-op and then dropped at the end of the hook.
+    charms.coordinator.acquire('cohort')
 
 
 @hook('stop')
@@ -418,6 +433,9 @@ def charm_status():
     if is_state('kubernetes-worker.cloud.pending'):
         hookenv.status_set('waiting', 'Waiting for cloud integration')
         return
+    if is_state('kubernetes-worker.cohorts.failed'):
+        hookenv.status_set('waiting',
+                           'Failed to join snap cohorts (see logs), will retry.')
     if not is_state('kube-control.dns.available'):
         # During deployment the worker has to start kubelet without cluster dns
         # configured. If this is the first unit online in a service pool
