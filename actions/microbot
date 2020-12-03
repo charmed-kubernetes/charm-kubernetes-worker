@@ -17,8 +17,7 @@
 import os
 import sys
 
-from charmhelpers.core.hookenv import action_get
-from charmhelpers.core.hookenv import action_set
+from charmhelpers.core.hookenv import action_fail, action_get, action_set
 from charmhelpers.core.hookenv import unit_public_ip
 from charms.reactive import endpoint_from_flag
 from charms.templating.jinja2 import render
@@ -27,9 +26,10 @@ from subprocess import call, check_output
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')
 
 context = {}
-context['replicas'] = action_get('replicas')
 context['delete'] = action_get('delete')
 context['public_address'] = unit_public_ip()
+context['registry'] = action_get('registry')
+context['replicas'] = action_get('replicas')
 
 arch = check_output(['dpkg', '--print-architecture']).rstrip()
 context['arch'] = arch.decode('utf-8')
@@ -69,7 +69,7 @@ if kube_control:
 render('microbot-example.yaml', '/root/cdk/addons/microbot.yaml',
        context)
 
-create_command = kubectl + ['create', '-f',
+create_command = kubectl + ['apply', '-f',
                             '/root/cdk/addons/microbot.yaml']
 
 create_response = call(create_command)
@@ -78,4 +78,4 @@ if create_response == 0:
     action_set({'address':
                'microbot.{}.nip.io'.format(context['public_address'])})
 else:
-    action_set({'microbot-create': 'Failed microbot creation.'})
+    action_fail('Failed to apply microbot manifest.')
