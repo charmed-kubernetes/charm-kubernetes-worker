@@ -21,14 +21,18 @@ resume:
 microbot:
     description: Launch microbot containers
     params:
-      replicas:
-        type: integer
-        default: 3
-        description: Number of microbots to launch in Kubernetes.
       delete:
         type: boolean
         default: False
         description: Remove a microbots deployment, service, and ingress if True.
+      registry:
+        type: string
+        default: rocks.canonical.com:443/cdk
+        description: Registry to use for the microbot image.
+      replicas:
+        type: integer
+        default: 3
+        description: Number of microbots to launch in Kubernetes.
 upgrade:
     description: Upgrade the kubernetes snaps
 registry:
