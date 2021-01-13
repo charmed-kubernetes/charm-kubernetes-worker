@@ -34,7 +34,7 @@ from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
 from charms.reactive import remove_state, clear_flag
 from charms.reactive import set_state, set_flag
-from charms.reactive import is_state
+from charms.reactive import is_state, is_flag_set
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed, is_data_changed
 from charms.templating.jinja2 import render
@@ -450,6 +450,9 @@ def charm_status():
         hookenv.status_set('blocked',
                            'Needs manual upgrade, run the upgrade action')
         return
+    if not is_flag_set('certificates.available'):
+        missing_certificates_notice()
+        return
     if is_state('kubernetes-worker.snaps.installed'):
         update_kubelet_status()
         return
@@ -541,6 +544,11 @@ def get_node_ip():
         return kubernetes_common.get_ingress_address6('kube-control')
     else:
         return kubernetes_common.get_ingress_address('kube-control')
+
+
+@when_not('certificates.available')
+def missing_certificates_notice():
+    hookenv.status_set('blocked', 'Missing relation to certificate authority.')
 
 
 @when('certificates.available', 'kube-control.connected',
