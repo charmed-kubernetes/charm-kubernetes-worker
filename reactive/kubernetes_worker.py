@@ -418,6 +418,9 @@ def charm_status():
         hookenv.status_set('blocked',
                            'Series upgrade in progress')
         return
+    if not is_flag_set('certificates.available'):
+        hookenv.status_set('blocked', 'Missing relation to certificate authority.')
+        return
     if not container_runtime_connected:
         hookenv.status_set('blocked',
                            'Connect a container runtime.')
@@ -449,9 +452,6 @@ def charm_status():
     if is_state('kubernetes-worker.snaps.upgrade-needed'):
         hookenv.status_set('blocked',
                            'Needs manual upgrade, run the upgrade action')
-        return
-    if not is_flag_set('certificates.available'):
-        missing_certificates_notice()
         return
     if is_state('kubernetes-worker.snaps.installed'):
         update_kubelet_status()
@@ -544,11 +544,6 @@ def get_node_ip():
         return kubernetes_common.get_ingress_address6('kube-control')
     else:
         return kubernetes_common.get_ingress_address('kube-control')
-
-
-@when_not('certificates.available')
-def missing_certificates_notice():
-    hookenv.status_set('blocked', 'Missing relation to certificate authority.')
 
 
 @when('certificates.available', 'kube-control.connected',
