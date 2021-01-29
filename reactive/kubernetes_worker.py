@@ -34,7 +34,7 @@ from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
 from charms.reactive import remove_state, clear_flag
 from charms.reactive import set_state, set_flag
-from charms.reactive import is_state
+from charms.reactive import is_state, is_flag_set
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed, is_data_changed
 from charms.templating.jinja2 import render
@@ -417,6 +417,9 @@ def charm_status():
     if is_state('upgrade.series.in-progress'):
         hookenv.status_set('blocked',
                            'Series upgrade in progress')
+        return
+    if not is_flag_set('certificates.available'):
+        hookenv.status_set('blocked', 'Missing relation to certificate authority.')
         return
     if not container_runtime_connected:
         hookenv.status_set('blocked',
