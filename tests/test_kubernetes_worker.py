@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import patch
 from reactive import kubernetes_worker
-from charms.reactive import endpoint_from_flag
+from charms.reactive import endpoint_from_flag, set_flag, clear_flag
+from charmhelpers.core import hookenv
 
 
 def patch_fixture(patch_target):
@@ -49,21 +50,15 @@ def test_series_upgrade(kubectl):
     assert kubernetes_worker.service_resume.call_count == 2
 
 
-@patch("reactive.kubernetes_worker.is_flag_set")
-@patch("reactive.kubernetes_worker.hookenv.status_set")
-def test_status_set_on_missing_ca(mock_status_set, mock_is_flag_set):
+def test_status_set_on_missing_ca():
     """Test that set_final_status() will set blocked state if CA is missing"""
-    def is_flag_set_side_effect(flag):
-        flags = {'upgrade.series.in-progress': False,
-                 'certificates.available': False}
-        value = flags.get(flag, None)
-        assert value is not None, "Unexpected flag requested: {}".format(flag)
-        return value
 
-    mock_is_flag_set.side_effect = is_flag_set_side_effect
-
+    set_flag("certificates.available")
     kubernetes_worker.charm_status()
-
-    mock_status_set.assert_called_once_with('blocked',
-                                            'Missing relation to certificate '
-                                            'authority.')
+    hookenv.status_set.assert_called_with('blocked',
+                                          'Connect a container runtime.')
+    clear_flag("certificates.available")
+    kubernetes_worker.charm_status()
+    hookenv.status_set.assert_called_with('blocked',
+                                          'Missing relation to certificate '
+                                          'authority.')
