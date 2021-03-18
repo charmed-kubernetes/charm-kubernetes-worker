@@ -439,6 +439,9 @@ def charm_status():
     if is_state('kubernetes-worker.cohorts.failed'):
         hookenv.status_set('waiting',
                            'Failed to join snap cohorts (see logs), will retry.')
+    if not is_state('kube-control.auth.available'):
+        hookenv.status_set('waiting', 'Waiting for cluster credentials.')
+        return
     if not is_state('kube-control.dns.available'):
         # During deployment the worker has to start kubelet without cluster dns
         # configured. If this is the first unit online in a service pool
