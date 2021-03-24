@@ -901,11 +901,11 @@ def configure_kubelet(dns, ingress_ip):
 
     # If present, ensure kubelet gets the pause container from the configured
     # registry. When not present, kubelet uses a default image location
-    # (currently k8s.gcr.io/pause:3.2).
+    # (currently k8s.gcr.io/pause:3.4.1).
     registry_location = get_registry_location()
     if registry_location:
         kubelet_opts['pod-infra-container-image'] = \
-            '{}/pause:3.2'.format(registry_location)
+            '{}/pause:3.4.1'.format(registry_location)
 
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
@@ -961,12 +961,12 @@ def render_and_launch_ingress():
         if context['arch'] == 's390x':
             context['defaultbackend_image'] = \
                 "{}/defaultbackend-s390x:1.4".format(backend_registry)
-        elif context['arch'] == 'arm64':
+        elif context['arch'] == 'ppc64el':
             context['defaultbackend_image'] = \
-                "{}/defaultbackend-arm64:1.5".format(backend_registry)
+                "{}/defaultbackend-ppc64le:1.5".format(backend_registry)
         else:
             context['defaultbackend_image'] = \
-                "{}/defaultbackend-amd64:1.5".format(backend_registry)
+                "{}/defaultbackend-{}:1.5".format(backend_registry, context['arch'])
 
     # Render the ingress daemon set controller manifest
     context['ssl_chain_completion'] = config.get(
@@ -999,7 +999,7 @@ def render_and_launch_ingress():
             context['ingress_uid'] = '101'
             context['ingress_image'] = '/'.join([
                 registry_location or 'us.gcr.io',
-                'k8s-artifacts-prod/ingress-nginx/controller:v0.34.1',
+                'k8s-artifacts-prod/ingress-nginx/controller:v0.44.0',
             ])
 
     kubelet_version = get_version('kubelet')
@@ -1480,7 +1480,7 @@ def update_registry_location():
         runtime = endpoint_from_flag('endpoint.container-runtime.available')
         if runtime:
             # Construct and send the sandbox image (pause container) to our runtime
-            uri = '{}/pause:3.2'.format(registry_location)
+            uri = '{}/pause:3.4.1'.format(registry_location)
             runtime.set_config(
                 sandbox_image=uri
             )
