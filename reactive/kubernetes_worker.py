@@ -32,9 +32,10 @@ from charms import layer
 from charms.layer import snap
 from charms.reactive import hook
 from charms.reactive import endpoint_from_flag
+from charms.reactive import endpoint_from_name
 from charms.reactive import remove_state, clear_flag
 from charms.reactive import set_state, set_flag
-from charms.reactive import is_state, is_flag_set
+from charms.reactive import is_state, is_flag_set, any_flags_set
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed, is_data_changed
 from charms.templating.jinja2 import render
@@ -439,6 +440,13 @@ def charm_status():
     if is_state('kubernetes-worker.cohorts.failed'):
         hookenv.status_set('waiting',
                            'Failed to join snap cohorts (see logs), will retry.')
+    if missing_kube_control():
+        # the check calls status_set
+        return
+    if not any_flags_set('kube-control.api_endpoints.available',
+                         'kube-api-endpoint.available'):
+        hookenv.status_set('waiting', 'Waiting for cluster endpoint.')
+        return
     if not is_state('kube-control.auth.available'):
         hookenv.status_set('waiting', 'Waiting for cluster credentials.')
         return
@@ -578,17 +586,18 @@ def send_data():
                                          key_path=client_key_path)
 
 
-@when('kube-api-endpoint.available', 'kube-control.dns.available',
-      'cni.available', 'endpoint.container-runtime.available')
+@when('kube-control.dns.available', 'cni.available',
+      'endpoint.container-runtime.available')
+@when_any('kube-control.api_endpoints.available',
+          'kube-api-endpoint.available')
 def watch_for_changes():
     ''' Watch for configuration changes and signal if we need to restart the
     worker services '''
-    kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
     container_runtime = \
         endpoint_from_flag('endpoint.container-runtime.available')
 
-    servers = get_kube_api_servers(kube_api)
+    servers = get_kube_api_servers()
     dns = kube_control.get_dns()
     cluster_cidr = kubernetes_common.cluster_cidr()
     container_runtime_name = \
@@ -611,7 +620,7 @@ def watch_for_changes():
         set_state('kubernetes-worker.restart-needed')
 
 
-@when('kubernetes-worker.snaps.installed', 'kube-api-endpoint.available',
+@when('kubernetes-worker.snaps.installed',
       'tls_client.ca.saved', 'tls_client.certs.saved',
       'kube-control.dns.available', 'kube-control.auth.available',
       'cni.available', 'kubernetes-worker.restart-needed',
@@ -620,16 +629,17 @@ def watch_for_changes():
 @when_not('kubernetes-worker.cloud.pending',
           'kubernetes-worker.cloud.blocked',
           'upgrade.series.in-progress')
+@when_any('kube-control.api_endpoints.available',
+          'kube-api-endpoint.available')
 def start_worker():
     ''' Start kubelet using the provided API and DNS info.'''
     # Note that the DNS server doesn't necessarily exist at this point. We know
     # what its IP will eventually be, though, so we can go ahead and configure
     # kubelet with that info. This ensures that early pods are configured with
     # the correct DNS even though the server isn't ready yet.
-    kube_api = endpoint_from_flag('kube-api-endpoint.available')
     kube_control = endpoint_from_flag('kube-control.dns.available')
 
-    servers = get_kube_api_servers(kube_api)
+    servers = get_kube_api_servers()
     dns = kube_control.get_dns()
     ingress_ip = get_node_ip()
     cluster_cidr = kubernetes_common.cluster_cidr()
@@ -1073,25 +1083,28 @@ def restart_unit_services():
         service_restart('snap.%s.daemon' % service)
 
 
-def get_kube_api_servers(kube_api):
-    '''Return the kubernetes api server address and port for this
-    relationship.'''
-    hosts = []
-    # Iterate over every service from the relation object.
-    for service in kube_api.services():
-        for unit in service['hosts']:
-            hosts.append('https://{0}:{1}'.format(unit['hostname'],
-                                                  unit['port']))
-    return hosts
+def get_kube_api_servers():
+    '''Return the list of kubernetes API endpoint URLs.'''
+    kube_control = endpoint_from_name("kube-control")
+    kube_api = endpoint_from_name("kube-api-endpoint")
+    endpoints = kube_control.get_api_endpoints()
+    if not endpoints:
+        # Fall back to the old kube-api-endpoint relation
+        for service in kube_api.services():
+            for unit in service['hosts']:
+                endpoints.append('https://{0}:{1}'.format(unit['hostname'],
+                                                          unit['port']))
+    return endpoints
 
 
 @when('kubernetes-worker.config.created')
 @when('nrpe-external-master.available')
-@when('kube-api-endpoint.available')
 @when('kube-control.auth.available')
 @when_any('config.changed.nagios_context',
           'config.changed.nagios_servicegroups',
           'nrpe-external-master.reconfigure')
+@when_any('kube-control.api_endpoints.available',
+          'kube-api-endpoint.available')
 def update_nrpe_config():
     services = ['snap.{}.daemon'.format(s) for s in worker_services]
     data = render('nagios_plugin.py', context={'node_name': get_node_name()})
@@ -1108,8 +1121,7 @@ def update_nrpe_config():
 
     creds = db.get('credentials')
     if creds:
-        kube_api = endpoint_from_flag('kube-api-endpoint.available')
-        servers = get_kube_api_servers(kube_api)
+        servers = get_kube_api_servers()
         server = servers[get_unit_number() % len(servers)]
         create_kubeconfig(nrpe_kubeconfig_path, server, ca_crt_path,
                           token=creds['client_token'], user='nagios')
@@ -1237,7 +1249,6 @@ def catch_change_in_creds(kube_control):
             set_state('kubernetes-worker.restart-needed')
 
 
-@when_not('kube-control.connected')
 def missing_kube_control():
     """Inform the operator they need to add the kube-control relation.
 
@@ -1245,6 +1256,7 @@ def missing_kube_control():
     a charm in a deployment that pre-dates the kube-control relation, it'll be
     missing.
 
+    Called from charm_status.
     """
     try:
         goal_state = hookenv.goal_state()
@@ -1252,14 +1264,18 @@ def missing_kube_control():
         goal_state = {}
 
     if 'kube-control' in goal_state.get('relations', {}):
-        hookenv.status_set(
-            'waiting',
-            'Waiting for kubernetes-master to become ready')
+        if not is_flag_set("kube-control.connected"):
+            hookenv.status_set(
+                'waiting',
+                'Waiting for kubernetes-master to become ready')
+            return True
     else:
         hookenv.status_set(
             'blocked',
             'Relate {}:kube-control kubernetes-master:kube-control'.format(
                 hookenv.service_name()))
+        return True
+    return False
 
 
 def _systemctl_is_active(application):

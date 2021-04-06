@@ -24,6 +24,9 @@ series:
 subordinate: false
 requires:
   kube-api-endpoint:
+    # kube-api-endpoint is deprecated. Its functionality has been rolled into
+    # the kube-control interface. The relation endpoint will be removed in a
+    # future release.
     interface: http
   kube-dns:
     # kube-dns is deprecated. Its functionality has been rolled into the
