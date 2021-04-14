@@ -24,9 +24,9 @@ series:
 subordinate: false
 requires:
   kube-api-endpoint:
-    # kube-api-endpoint is deprecated. Its functionality has been rolled into
-    # the kube-control interface. The relation endpoint will be removed in a
-    # future release.
+    # kube-api-endpoint is not recommended as the API endpoints will be provided
+    # via the kube-control relation. However, it can be used to override those
+    # endpoints if you need to inject a reverse proxy between the master and workers.
     interface: http
   kube-dns:
     # kube-dns is deprecated. Its functionality has been rolled into the

@@ -1087,17 +1087,16 @@ def get_kube_api_servers():
     '''Return the list of kubernetes API endpoint URLs.'''
     kube_control = endpoint_from_name("kube-control")
     kube_api = endpoint_from_name("kube-api-endpoint")
+    # prefer kube-api-endpoints
+    if kube_api.services():
+        return [
+            'https://{0}:{1}'.format(unit['hostname'], unit['port'])
+            for service in kube_api.services()
+            for unit in service['hosts']
+        ]
     if hasattr(kube_control, "get_api_endpoints"):
-        endpoints = kube_control.get_api_endpoints()
-    else:
-        endpoints = []
-    if not endpoints:
-        # Fall back to the old kube-api-endpoint relation
-        for service in kube_api.services():
-            for unit in service['hosts']:
-                endpoints.append('https://{0}:{1}'.format(unit['hostname'],
-                                                          unit['port']))
-    return endpoints
+        return kube_control.get_api_endpoints()
+    return []
 
 
 @when('kubernetes-worker.config.created')
