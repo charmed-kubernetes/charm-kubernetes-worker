@@ -447,6 +447,9 @@ def charm_status():
                          'kube-api-endpoint.available'):
         hookenv.status_set('waiting', 'Waiting for cluster endpoint.')
         return
+    if not get_kube_api_servers():
+        hookenv.status_set('waiting', 'Unable to determine cluster endpoint.')
+        return
     if not is_state('kube-control.auth.available'):
         hookenv.status_set('waiting', 'Waiting for cluster credentials.')
         return
@@ -646,6 +649,10 @@ def start_worker():
 
     if cluster_cidr is None:
         hookenv.log('Waiting for cluster cidr.')
+        return
+
+    if not servers:
+        hookenv.log("Waiting for API server URL")
         return
 
     if kubernetes_common.is_ipv6(cluster_cidr):
@@ -1096,6 +1103,8 @@ def get_kube_api_servers():
         ]
     if hasattr(kube_control, "get_api_endpoints"):
         return kube_control.get_api_endpoints()
+    hookenv.log("Unable to determine API server URLs from either kube-control "
+                "or kube-api-endpoint relation", hookenv.ERROR)
     return []
 
 
@@ -1122,8 +1131,8 @@ def update_nrpe_config():
     nrpe_setup.write()
 
     creds = db.get('credentials')
-    if creds:
-        servers = get_kube_api_servers()
+    servers = get_kube_api_servers()
+    if creds and servers:
         server = servers[get_unit_number() % len(servers)]
         create_kubeconfig(nrpe_kubeconfig_path, server, ca_crt_path,
                           token=creds['client_token'], user='nagios')
