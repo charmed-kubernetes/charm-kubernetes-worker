@@ -37,6 +37,8 @@ async def test_build_and_deploy(ops_test):
         worker_charm,
         "--resource",
         f"cni-amd64={cni_amd64}",
+        "--constraints",
+        "cores=4 mem=4G root-disk=16G",
     )
     assert rc == 0, f"Failed to deploy with resource: {stderr or stdout}"
 
