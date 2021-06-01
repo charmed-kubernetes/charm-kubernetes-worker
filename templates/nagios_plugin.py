@@ -51,8 +51,7 @@ def check_node(node):
                     msg.append(check['error'])
                     if check['type'] == 'error':
                         error = True
-                else:
-                    break
+                break
         else:
             err_msg = 'Unable to find status for {}'.format(check['error'])
             raise nagios_plugin3.CriticalError(err_msg)
