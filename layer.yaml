@@ -11,7 +11,6 @@ includes:
   - 'layer:kubernetes-master-worker-base'
   - 'interface:http'
   - 'interface:kubernetes-cni'
-  - 'interface:kube-dns'
   - 'interface:kube-control'
   - 'interface:aws-integration'
   - 'interface:gcp-integration'
