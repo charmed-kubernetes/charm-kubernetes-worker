@@ -15,11 +15,6 @@ options:
     description: |
       Labels can be used to organize and to select subsets of nodes in the
       cluster. Declare node labels in key=value format, separated by spaces.
-  allow-privileged:
-    type: string
-    default: "true"
-    description: |
-      This option is now deprecated and has no effect.
   channel:
     type: string
     default: "1.22/edge"

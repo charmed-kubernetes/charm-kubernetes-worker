@@ -829,92 +829,68 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
         kubelet_opts['provider-id'] = azure.vm_id
 
-    if get_version('kubelet') >= (1, 10):
-        # Put together the KubeletConfiguration data
-        kubelet_config = {
-            'apiVersion': 'kubelet.config.k8s.io/v1beta1',
-            'kind': 'KubeletConfiguration',
-            'address': '0.0.0.0',
-            'authentication': {
-                'anonymous': {
-                    'enabled': False
-                },
-                'x509': {
-                    'clientCAFile': str(ca_crt_path)
-                }
+    # Put together the KubeletConfiguration data
+    kubelet_config = {
+        'apiVersion': 'kubelet.config.k8s.io/v1beta1',
+        'kind': 'KubeletConfiguration',
+        'address': '0.0.0.0',
+        'authentication': {
+            'anonymous': {
+                'enabled': False
             },
-            # NB: authz webhook config tells the kubelet to ask the api server
-            # if a request is authorized; it is not related to the authn
-            # webhook config of the k8s master services.
-            'authorization': {
-                'mode': 'Webhook'
-            },
-            'clusterDomain': dns['domain'],
-            'failSwapOn': False,
-            'port': 10250,
-            'protectKernelDefaults': True,
-            'readOnlyPort': 0,
-            'tlsCertFile': str(server_crt_path),
-            'tlsPrivateKeyFile': str(server_key_path)
-        }
-        if dns['enable-kube-dns']:
-            kubelet_config['clusterDNS'] = [dns['sdn-ip']]
+            'x509': {
+                'clientCAFile': str(ca_crt_path)
+            }
+        },
+        # NB: authz webhook config tells the kubelet to ask the api server
+        # if a request is authorized; it is not related to the authn
+        # webhook config of the k8s master services.
+        'authorization': {
+            'mode': 'Webhook'
+        },
+        'clusterDomain': dns['domain'],
+        'failSwapOn': False,
+        'port': 10250,
+        'protectKernelDefaults': True,
+        'readOnlyPort': 0,
+        'tlsCertFile': str(server_crt_path),
+        'tlsPrivateKeyFile': str(server_key_path)
+    }
+    if dns['enable-kube-dns']:
+        kubelet_config['clusterDNS'] = [dns['sdn-ip']]
 
-        # Handle feature gates
-        feature_gates = {}
-        if get_version('kubelet') >= (1, 19):
-            # NB: required for CIS compliance
-            feature_gates['RotateKubeletServerCertificate'] = True
-        if is_state('kubernetes-worker.gpu.enabled'):
-            feature_gates['DevicePlugins'] = True
-        if feature_gates:
-            kubelet_config['featureGates'] = feature_gates
-        if kubernetes_common.is_dual_stack(kubernetes_common.cluster_cidr()):
-            feature_gates = kubelet_config.setdefault('featureGates', {})
-            feature_gates['IPv6DualStack'] = True
+    # Handle feature gates
+    feature_gates = {}
+    if get_version('kubelet') >= (1, 19):
+        # NB: required for CIS compliance
+        feature_gates['RotateKubeletServerCertificate'] = True
+    if is_state('kubernetes-worker.gpu.enabled'):
+        feature_gates['DevicePlugins'] = True
+    if feature_gates:
+        kubelet_config['featureGates'] = feature_gates
+    if kubernetes_common.is_dual_stack(kubernetes_common.cluster_cidr()):
+        feature_gates = kubelet_config.setdefault('featureGates', {})
+        feature_gates['IPv6DualStack'] = True
 
-        # Workaround for DNS on bionic
-        # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
-        resolv_path = os.path.realpath('/etc/resolv.conf')
-        if resolv_path == '/run/systemd/resolve/stub-resolv.conf':
-            kubelet_config['resolvConf'] = '/run/systemd/resolve/resolv.conf'
+    # Workaround for DNS on bionic
+    # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
+    resolv_path = os.path.realpath('/etc/resolv.conf')
+    if resolv_path == '/run/systemd/resolve/stub-resolv.conf':
+        kubelet_config['resolvConf'] = '/run/systemd/resolve/resolv.conf'
 
-        # Add kubelet-extra-config. This needs to happen last so that it
-        # overrides any config provided by the charm.
-        kubelet_extra_config = hookenv.config('kubelet-extra-config')
-        kubelet_extra_config = yaml.safe_load(kubelet_extra_config)
-        merge_kubelet_extra_config(kubelet_config, kubelet_extra_config)
+    # Add kubelet-extra-config. This needs to happen last so that it
+    # overrides any config provided by the charm.
+    kubelet_extra_config = hookenv.config('kubelet-extra-config')
+    kubelet_extra_config = yaml.safe_load(kubelet_extra_config)
+    merge_kubelet_extra_config(kubelet_config, kubelet_extra_config)
 
-        # Render the file and configure Kubelet to use it
-        os.makedirs('/root/cdk/kubelet', exist_ok=True)
-        with open('/root/cdk/kubelet/config.yaml', 'w') as f:
-            f.write('# Generated by kubernetes-worker charm, do not edit\n')
-            yaml.dump(kubelet_config, f)
-        kubelet_opts['config'] = '/root/cdk/kubelet/config.yaml'
-    else:
-        # NOTE: This is for 1.9. Once we've dropped 1.9 support, we can remove
-        # this whole block and the parent if statement.
-        kubelet_opts['address'] = '0.0.0.0'
-        kubelet_opts['anonymous-auth'] = 'false'
-        kubelet_opts['client-ca-file'] = str(ca_crt_path)
-        kubelet_opts['cluster-domain'] = dns['domain']
-        kubelet_opts['fail-swap-on'] = 'false'
-        kubelet_opts['port'] = '10250'
-        kubelet_opts['tls-cert-file'] = str(server_crt_path)
-        kubelet_opts['tls-private-key-file'] = str(server_key_path)
-        if dns['enable-kube-dns']:
-            kubelet_opts['cluster-dns'] = dns['sdn-ip']
-        if is_state('kubernetes-worker.gpu.enabled'):
-            kubelet_opts['feature-gates'] = 'DevicePlugins=true'
-
-        # Workaround for DNS on bionic, for k8s 1.9
-        # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
-        resolv_path = os.path.realpath('/etc/resolv.conf')
-        if resolv_path == '/run/systemd/resolve/stub-resolv.conf':
-            kubelet_opts['resolv-conf'] = '/run/systemd/resolve/resolv.conf'
-
-    if get_version('kubelet') >= (1, 11):
-        kubelet_opts['dynamic-config-dir'] = '/root/cdk/kubelet/dynamic-config'
+    # Render the file and configure Kubelet to use it
+    os.makedirs('/root/cdk/kubelet', exist_ok=True)
+    with open('/root/cdk/kubelet/config.yaml', 'w') as f:
+        f.write('# Generated by kubernetes-worker charm, do not edit\n')
+        yaml.dump(kubelet_config, f)
+    kubelet_opts['config'] = '/root/cdk/kubelet/config.yaml'
+    kubelet_opts['dynamic-config-dir'] = '/root/cdk/kubelet/dynamic-config'
 
     # If present, ensure kubelet gets the pause container from the configured
     # registry. When not present, kubelet uses a default image location
@@ -1169,13 +1145,6 @@ def enable_gpu():
     """Enable GPU usage on this node.
 
     """
-    if get_version('kubelet') < (1, 9):
-        hookenv.status_set(
-            'active',
-            'Upgrade to snap channel >= 1.9/stable to enable GPU support.'
-        )
-        return
-
     hookenv.log('Enabling gpu mode')
     try:
         # Not sure why this is necessary, but if you don't run this, k8s will
