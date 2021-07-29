@@ -679,7 +679,7 @@ def start_worker():
 def configure_cni(cni):
     ''' Set worker configuration on the CNI relation. This lets the CNI
     subordinate know that we're the worker so it can respond accordingly. '''
-    cni.set_config(is_master=False, kubeconfig_path=kubeconfig_path)
+    cni.set_config(is_master=False)
 
 
 @when('config.changed.labels')
@@ -778,6 +778,9 @@ def create_config(server, creds):
                       token=creds['kubelet_token'], user='kubelet')
     create_kubeconfig(kubeproxyconfig_path, server, ca_crt_path,
                       token=creds['proxy_token'], user='kube-proxy')
+    cni = endpoint_from_name('cni')
+    if cni:
+        cni.notify_kubeconfig_changed()
 
 
 def merge_kubelet_extra_config(config, extra_config):
