@@ -157,6 +157,8 @@ def upgrade_charm():
         kube_control = endpoint_from_flag('kube-control.connected')
         kube_control.manage_flags()
 
+    shutil.rmtree('/root/cdk/kubelet/dynamic-config', ignore_errors=True)
+
     remove_state('kubernetes-worker.cni-plugins.installed')
     remove_state('kubernetes-worker.config.created')
     remove_state('kubernetes-worker.ingress.available')
