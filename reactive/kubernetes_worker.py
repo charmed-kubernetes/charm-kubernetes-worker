@@ -1553,7 +1553,7 @@ def workaround_lxd_kernel_params():
     to the desired values.
     '''
     if is_container():
-        hookenv.log('LXD detected, applying kernel param bind mounts')
+        hookenv.log('LXD detected, faking kernel params via bind mounts')
         root_dir = '/root/cdk/lxd-kernel-params'
         os.makedirs(root_dir, exist_ok=True)
         # Kernel params taken from:
@@ -1575,4 +1575,4 @@ def workaround_lxd_kernel_params():
             fstab_add(fake_param_path, real_param_path, 'none', 'bind')
         subprocess.check_call(['mount', '-a'])
     else:
-        hookenv.log('LXD not detected, skipping kernel param bind mounts')
+        hookenv.log('LXD not detected, not faking kernel params')
