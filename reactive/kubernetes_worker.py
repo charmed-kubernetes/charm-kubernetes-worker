@@ -41,6 +41,7 @@ from charms.reactive import data_changed, is_data_changed
 from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
+from charmhelpers.core.host import fstab_add, is_container
 from charmhelpers.core.host import service_stop, service_restart
 from charmhelpers.core.host import service_pause, service_resume
 from charmhelpers.contrib.charmsupport import nrpe
@@ -904,6 +905,8 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['pod-infra-container-image'] = \
             '{}/pause:3.4.1'.format(registry_location)
 
+    workaround_lxd_kernel_params()
+
     configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
                                  'kubelet-extra-args')
 
@@ -1542,3 +1545,34 @@ def configure_default_cni():
 @when('ingress-proxy.available')
 def configure_ingress_proxy(ingress_proxy):
     ingress_proxy.configure(port='80')
+
+
+def workaround_lxd_kernel_params():
+    '''
+    Workaround for kubelet not starting in LXD when kernel params are not set
+    to the desired values.
+    '''
+    if is_container():
+        hookenv.log('LXD detected, applying kernel param bind mounts')
+        root_dir = '/root/cdk/lxd-kernel-params'
+        os.makedirs(root_dir, exist_ok=True)
+        # Kernel params taken from:
+        # https://github.com/kubernetes/kubernetes/blob/v1.22.0/pkg/kubelet/cm/container_manager_linux.go#L421-L426
+        # https://github.com/kubernetes/kubernetes/blob/v1.22.0/pkg/util/sysctl/sysctl.go#L30-L64
+        params = {
+            'vm.overcommit_memory': 1,
+            'vm.panic_on_oom': 0,
+            'kernel.panic': 10,
+            'kernel.panic_on_oops': 1,
+            'kernel.keys.root_maxkeys': 1000000,
+            'kernel.keys.root_maxbytes': 1000000 * 25
+        }
+        for param, param_value in params.items():
+            fake_param_path = root_dir + '/' + param
+            with open(fake_param_path, 'w') as f:
+                f.write(str(param_value))
+            real_param_path = '/proc/sys/' + param.replace('.', '/')
+            fstab_add(fake_param_path, real_param_path, 'none', 'bind')
+        subprocess.check_call(['mount', '-a'])
+    else:
+        hookenv.log('LXD not detected, skipping kernel param bind mounts')
