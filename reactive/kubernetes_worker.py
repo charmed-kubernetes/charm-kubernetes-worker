@@ -999,7 +999,7 @@ def render_and_launch_ingress():
             context['ingress_uid'] = '101'
             context['ingress_image'] = '/'.join([
                 registry_location or 'us.gcr.io',
-                'k8s-artifacts-prod/ingress-nginx/controller:v0.45.0',
+                'k8s-artifacts-prod/ingress-nginx/controller:v1.0.0-beta.3',
             ])
 
     kubelet_version = get_version('kubelet')
