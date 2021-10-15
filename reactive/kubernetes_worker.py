@@ -1127,6 +1127,12 @@ def update_nrpe_config():
 
         remove_state('nrpe-external-master.reconfigure')
         set_state('nrpe-external-master.initial-config')
+    # request CPU governor check from nrpe relation to be performance
+    rel_settings = {
+            'requested_cpu_governor': 'performance',
+            }
+    for rid in hookenv.relation_ids('nrpe-external-master'):
+        hookenv.relation_set(relation_id=rid, relation_settings=rel_settings)
 
 
 @when_not('nrpe-external-master.available')
