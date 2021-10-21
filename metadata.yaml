@@ -64,16 +64,28 @@ resources:
   core:
     type: file
     filename: core.snap
-    description: core snap
+    description: |
+      core snap
+      [DEPRECATED] in favor of using a Snap Store Proxy.
+      See https://ubuntu.com/kubernetes/docs/proxies for more details.
   kubectl:
     type: file
     filename: kubectl.snap
-    description: kubectl snap
+    description: |
+      kubectl snap
+      [DEPRECATED] in favor of using a Snap Store Proxy.
+      See https://ubuntu.com/kubernetes/docs/proxies for more details.
   kubelet:
     type: file
     filename: kubelet.snap
-    description: kubelet snap
+    description: |
+      kubelet snap
+      [DEPRECATED] in favor of using a Snap Store Proxy.
+      See https://ubuntu.com/kubernetes/docs/proxies for more details.
   kube-proxy:
     type: file
     filename: kube-proxy.snap
-    description: kube-proxy snap
+    description: |
+      kube-proxy snap
+      [DEPRECATED] in favor of using a Snap Store Proxy.
+      See https://ubuntu.com/kubernetes/docs/proxies for more details.
