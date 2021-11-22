@@ -677,14 +677,6 @@ def start_worker():
     remove_state('kubernetes-worker.restart-needed')
 
 
-@when('cni.connected')
-@when_not('cni.configured')
-def configure_cni(cni):
-    ''' Set worker configuration on the CNI relation. This lets the CNI
-    subordinate know that we're the worker so it can respond accordingly. '''
-    cni.set_config(is_master=False)
-
-
 @when('config.changed.labels')
 def handle_labels_changed():
     set_state('kubernetes-worker.label-config-required')
