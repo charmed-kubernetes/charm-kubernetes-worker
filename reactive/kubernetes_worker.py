@@ -160,7 +160,10 @@ def upgrade_charm():
 
     shutil.rmtree('/root/cdk/kubelet/dynamic-config', ignore_errors=True)
 
+    # kubernetes-worker.cni-plugins.installed flag is deprecated but we still
+    # want to clean it up
     remove_state('kubernetes-worker.cni-plugins.installed')
+
     remove_state('kubernetes-worker.config.created')
     remove_state('kubernetes-worker.ingress.available')
     remove_state('worker.auth.bootstrapped')
@@ -360,47 +363,6 @@ def shutdown():
     service_stop('snap.kube-proxy.daemon')
 
 
-@when('endpoint.container-runtime.available')
-@when_not('kubernetes-worker.cni-plugins.installed')
-def install_cni_plugins():
-    ''' Unpack the cni-plugins resource '''
-    # Get the resource via resource_get
-    try:
-        resource_name = 'cni-{}'.format(arch())
-        archive = hookenv.resource_get(resource_name)
-    except Exception:
-        message = 'Error fetching the cni resource.'
-        hookenv.log(message)
-        hookenv.status_set('blocked', message)
-        return
-
-    if not archive:
-        hookenv.log('Missing cni resource.')
-        hookenv.status_set('blocked', 'Missing cni resource.')
-        return
-
-    # Handle null resource publication, we check if filesize < 1mb
-    filesize = os.stat(archive).st_size
-    if filesize < 1000000:
-        hookenv.status_set('blocked', 'Incomplete cni resource.')
-        return
-
-    hookenv.status_set('maintenance', 'Unpacking cni resource.')
-
-    unpack_path = '/opt/cni/bin'
-    os.makedirs(unpack_path, exist_ok=True)
-    cmd = ['tar', 'xfvz', archive, '-C', unpack_path]
-    hookenv.log(cmd)
-    check_call(cmd)
-
-    # Used by the "registry" action. The action is run on a single worker, but
-    # the registry pod can end up on any worker, so we need this directory on
-    # all the workers.
-    os.makedirs('/srv/registry', exist_ok=True)
-
-    set_state('kubernetes-worker.cni-plugins.installed')
-
-
 @when('kubernetes-worker.snaps.installed')
 def set_app_version():
     ''' Declare the application version to juju '''
@@ -436,6 +398,9 @@ def charm_status():
     if azure_joined and cloud_blocked:
         hookenv.status_set('blocked',
                            'Azure integration requires K8s 1.11 or greater')
+        return
+    if not is_flag_set('kubernetes.cni-plugins.installed'):
+        hookenv.status_set('blocked', 'Missing CNI resource')
         return
     if is_state('kubernetes-worker.cloud.pending'):
         hookenv.status_set('waiting', 'Waiting for cloud integration')
@@ -675,14 +640,6 @@ def start_worker():
     set_state('kubernetes-worker.label-config-required')
     set_state('nrpe-external-master.reconfigure')
     remove_state('kubernetes-worker.restart-needed')
-
-
-@when('cni.connected')
-@when_not('cni.configured')
-def configure_cni(cni):
-    ''' Set worker configuration on the CNI relation. This lets the CNI
-    subordinate know that we're the worker so it can respond accordingly. '''
-    cni.set_config(is_master=False)
 
 
 @when('config.changed.labels')
@@ -1127,6 +1084,12 @@ def update_nrpe_config():
 
         remove_state('nrpe-external-master.reconfigure')
         set_state('nrpe-external-master.initial-config')
+    # request CPU governor check from nrpe relation to be performance
+    rel_settings = {
+            'requested_cpu_governor': 'performance',
+            }
+    for rid in hookenv.relation_ids('nrpe-external-master'):
+        hookenv.relation_set(relation_id=rid, relation_settings=rel_settings)
 
 
 @when_not('nrpe-external-master.available')
