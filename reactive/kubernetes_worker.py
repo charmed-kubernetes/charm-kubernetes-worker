@@ -772,12 +772,16 @@ def configure_kubelet(dns, ingress_ip):
     if kubelet_opts['container-runtime'] == 'remote':
         kubelet_opts['container-runtime-endpoint'] = container_runtime.get_socket()
 
+    feature_gates = {}
+
     kubelet_cloud_config_path = cloud_config_path('kubelet')
     if is_state('endpoint.aws.ready'):
         kubelet_opts['cloud-provider'] = 'aws'
+        feature_gates['CSIMigrationAWS'] = False
     elif is_state('endpoint.gcp.ready'):
         kubelet_opts['cloud-provider'] = 'gce'
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
+        feature_gates['CSIMigrationGCE'] = False
     elif is_state('endpoint.openstack.ready'):
         kubelet_opts['cloud-provider'] = 'external'
     elif is_state('endpoint.vsphere.joined'):
@@ -791,6 +795,7 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_opts['cloud-provider'] = 'azure'
         kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
         kubelet_opts['provider-id'] = azure.vm_id
+        feature_gates['CSIMigrationAzureDisk'] = False
 
     # Put together the KubeletConfiguration data
     kubelet_config = {
@@ -823,7 +828,6 @@ def configure_kubelet(dns, ingress_ip):
         kubelet_config['clusterDNS'] = [dns['sdn-ip']]
 
     # Handle feature gates
-    feature_gates = {}
     if get_version('kubelet') >= (1, 19):
         # NB: required for CIS compliance
         feature_gates['RotateKubeletServerCertificate'] = True
