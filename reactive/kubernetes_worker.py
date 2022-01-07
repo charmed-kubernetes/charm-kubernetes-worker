@@ -20,7 +20,6 @@ import shutil
 import subprocess
 import time
 import traceback
-import yaml
 
 from base64 import b64encode
 from subprocess import check_call, check_output
@@ -41,7 +40,6 @@ from charms.reactive import data_changed, is_data_changed
 from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
-from charmhelpers.core.host import fstab_add, is_container
 from charmhelpers.core.host import service_stop, service_restart
 from charmhelpers.core.host import service_pause, service_resume
 from charmhelpers.contrib.charmsupport import nrpe
@@ -55,9 +53,7 @@ from charms.layer.kubernetes_common import calculate_and_store_resource_checksum
 from charms.layer.kubernetes_common import create_kubeconfig
 from charms.layer.kubernetes_common import kubectl
 from charms.layer.kubernetes_common import arch, get_node_name
-from charms.layer.kubernetes_common import configure_kubernetes_service
 from charms.layer.kubernetes_common import parse_extra_args
-from charms.layer.kubernetes_common import cloud_config_path
 from charms.layer.kubernetes_common import write_gcp_snap_config
 from charms.layer.kubernetes_common import write_azure_snap_config
 from charms.layer.kubernetes_common import kubeproxyconfig_path
@@ -69,7 +65,11 @@ from charms.layer.kubernetes_common import server_key_path
 from charms.layer.kubernetes_common import client_crt_path
 from charms.layer.kubernetes_common import client_key_path
 from charms.layer.kubernetes_common import get_unit_number
-from charms.layer.kubernetes_common import _get_vmware_uuid
+from charms.layer.kubernetes_common import get_node_ip
+from charms.layer.kubernetes_common import configure_kubelet
+from charms.layer.kubernetes_common import get_sandbox_image_uri
+from charms.layer.kubernetes_common import configure_default_cni
+from charms.layer.kubernetes_common import kubelet_kubeconfig_path
 
 from charms.layer.nagios import install_nagios_plugin_from_text
 from charms.layer.nagios import remove_nagios_plugin
@@ -80,7 +80,6 @@ from charms.layer.nagios import remove_nagios_plugin
 nrpe.Check.shortname_re = r'[\.A-Za-z0-9-_]+$'
 nrpe_kubeconfig_path = '/var/lib/nagios/.kube/config'
 
-kubeconfig_path = '/root/cdk/kubeconfig'
 gcp_creds_env_key = 'GOOGLE_APPLICATION_CREDENTIALS'
 snap_resources = ['kubectl', 'kubelet', 'kube-proxy']
 worker_services = ('kubelet', 'kube-proxy')
@@ -355,7 +354,7 @@ def shutdown():
         - stop the worker services
     '''
     try:
-        if os.path.isfile(kubeconfig_path):
+        if os.path.isfile(kubelet_kubeconfig_path):
             kubectl('delete', 'node', get_node_name())
     except CalledProcessError:
         hookenv.log('Failed to unregister node.')
@@ -517,17 +516,6 @@ def update_kubelet_status():
     hookenv.status_set('active', 'Kubernetes worker running.')
 
 
-def get_node_ip():
-    '''Determines the preferred NodeIP value for this node.'''
-    cluster_cidr = kubernetes_common.cluster_cidr()
-    if not cluster_cidr:
-        return None
-    if kubernetes_common.is_ipv6_preferred(cluster_cidr):
-        return kubernetes_common.get_ingress_address6('kube-control')
-    else:
-        return kubernetes_common.get_ingress_address('kube-control')
-
-
 @when('certificates.available', 'kube-control.connected',
       'cni.available', 'kube-control.dns.available')
 def send_data():
@@ -612,7 +600,9 @@ def start_worker():
 
     servers = get_kube_api_servers()
     dns = kube_control.get_dns()
-    ingress_ip = get_node_ip()
+    dns_domain = dns['domain']
+    dns_ip = dns['sdn-ip']
+    registry = get_registry_location()
     cluster_cidr = kubernetes_common.cluster_cidr()
 
     if cluster_cidr is None:
@@ -630,8 +620,8 @@ def start_worker():
     data_changed('kube-control.creds', creds)
 
     create_config(servers[get_unit_number() % len(servers)], creds)
-    configure_default_cni()
-    configure_kubelet(dns, ingress_ip)
+    configure_default_cni(kube_control.get_default_cni())
+    configure_kubelet(dns_domain, dns_ip, registry)
     configure_kube_proxy(configure_prefix, servers,
                          cluster_cidr)
     set_state('kubernetes-worker.config.created')
@@ -734,142 +724,13 @@ def create_config(server, creds):
     create_kubeconfig(kubeclientconfig_path, server, ca_crt_path,
                       token=creds['client_token'], user='root')
     # Create kubernetes configuration for kubelet, and kube-proxy services.
-    create_kubeconfig(kubeconfig_path, server, ca_crt_path,
+    create_kubeconfig(kubelet_kubeconfig_path, server, ca_crt_path,
                       token=creds['kubelet_token'], user='kubelet')
     create_kubeconfig(kubeproxyconfig_path, server, ca_crt_path,
                       token=creds['proxy_token'], user='kube-proxy')
     cni = endpoint_from_name('cni')
     if cni:
         cni.notify_kubeconfig_changed()
-
-
-def merge_kubelet_extra_config(config, extra_config):
-    ''' Updates config to include the contents of extra_config. This is done
-    recursively to allow deeply nested dictionaries to be merged.
-
-    This is destructive: it modifies the config dict that is passed in.
-    '''
-    for k, extra_config_value in extra_config.items():
-        if isinstance(extra_config_value, dict):
-            config_value = config.setdefault(k, {})
-            merge_kubelet_extra_config(config_value, extra_config_value)
-        else:
-            config[k] = extra_config_value
-
-
-def configure_kubelet(dns, ingress_ip):
-    kubelet_opts = {}
-    kubelet_opts['kubeconfig'] = kubeconfig_path
-    kubelet_opts['network-plugin'] = 'cni'
-    kubelet_opts['v'] = '0'
-    kubelet_opts['logtostderr'] = 'true'
-    kubelet_opts['node-ip'] = ingress_ip
-
-    container_runtime = \
-        endpoint_from_flag('endpoint.container-runtime.available')
-
-    kubelet_opts['container-runtime'] = container_runtime.get_runtime()
-    if kubelet_opts['container-runtime'] == 'remote':
-        kubelet_opts['container-runtime-endpoint'] = container_runtime.get_socket()
-
-    feature_gates = {}
-
-    kubelet_cloud_config_path = cloud_config_path('kubelet')
-    if is_state('endpoint.aws.ready'):
-        kubelet_opts['cloud-provider'] = 'aws'
-        feature_gates['CSIMigrationAWS'] = False
-    elif is_state('endpoint.gcp.ready'):
-        kubelet_opts['cloud-provider'] = 'gce'
-        kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
-        feature_gates['CSIMigrationGCE'] = False
-    elif is_state('endpoint.openstack.ready'):
-        kubelet_opts['cloud-provider'] = 'external'
-    elif is_state('endpoint.vsphere.joined'):
-        # vsphere just needs to be joined on the worker (vs 'ready')
-        kubelet_opts['cloud-provider'] = 'vsphere'
-        # NB: vsphere maps node product-id to its uuid (no config file needed).
-        uuid = _get_vmware_uuid()
-        kubelet_opts['provider-id'] = 'vsphere://{}'.format(uuid)
-    elif is_state('endpoint.azure.ready'):
-        azure = endpoint_from_flag('endpoint.azure.ready')
-        kubelet_opts['cloud-provider'] = 'azure'
-        kubelet_opts['cloud-config'] = str(kubelet_cloud_config_path)
-        kubelet_opts['provider-id'] = azure.vm_id
-        feature_gates['CSIMigrationAzureDisk'] = False
-
-    # Put together the KubeletConfiguration data
-    kubelet_config = {
-        'apiVersion': 'kubelet.config.k8s.io/v1beta1',
-        'kind': 'KubeletConfiguration',
-        'address': '0.0.0.0',
-        'authentication': {
-            'anonymous': {
-                'enabled': False
-            },
-            'x509': {
-                'clientCAFile': str(ca_crt_path)
-            }
-        },
-        # NB: authz webhook config tells the kubelet to ask the api server
-        # if a request is authorized; it is not related to the authn
-        # webhook config of the k8s master services.
-        'authorization': {
-            'mode': 'Webhook'
-        },
-        'clusterDomain': dns['domain'],
-        'failSwapOn': False,
-        'port': 10250,
-        'protectKernelDefaults': True,
-        'readOnlyPort': 0,
-        'tlsCertFile': str(server_crt_path),
-        'tlsPrivateKeyFile': str(server_key_path)
-    }
-    if dns['enable-kube-dns']:
-        kubelet_config['clusterDNS'] = [dns['sdn-ip']]
-
-    # Handle feature gates
-    if get_version('kubelet') >= (1, 19):
-        # NB: required for CIS compliance
-        feature_gates['RotateKubeletServerCertificate'] = True
-    if is_state('kubernetes-worker.gpu.enabled'):
-        feature_gates['DevicePlugins'] = True
-    if feature_gates:
-        kubelet_config['featureGates'] = feature_gates
-    if kubernetes_common.is_dual_stack(kubernetes_common.cluster_cidr()):
-        feature_gates = kubelet_config.setdefault('featureGates', {})
-        feature_gates['IPv6DualStack'] = True
-
-    # Workaround for DNS on bionic
-    # https://github.com/juju-solutions/bundle-canonical-kubernetes/issues/655
-    resolv_path = os.path.realpath('/etc/resolv.conf')
-    if resolv_path == '/run/systemd/resolve/stub-resolv.conf':
-        kubelet_config['resolvConf'] = '/run/systemd/resolve/resolv.conf'
-
-    # Add kubelet-extra-config. This needs to happen last so that it
-    # overrides any config provided by the charm.
-    kubelet_extra_config = hookenv.config('kubelet-extra-config')
-    kubelet_extra_config = yaml.safe_load(kubelet_extra_config)
-    merge_kubelet_extra_config(kubelet_config, kubelet_extra_config)
-
-    # Render the file and configure Kubelet to use it
-    os.makedirs('/root/cdk/kubelet', exist_ok=True)
-    with open('/root/cdk/kubelet/config.yaml', 'w') as f:
-        f.write('# Generated by kubernetes-worker charm, do not edit\n')
-        yaml.dump(kubelet_config, f)
-    kubelet_opts['config'] = '/root/cdk/kubelet/config.yaml'
-
-    # If present, ensure kubelet gets the pause container from the configured
-    # registry. When not present, kubelet uses a default image location
-    # (currently k8s.gcr.io/pause:3.4.1).
-    registry_location = get_registry_location()
-    if registry_location:
-        kubelet_opts['pod-infra-container-image'] = \
-            '{}/pause:3.4.1'.format(registry_location)
-
-    workaround_lxd_kernel_params()
-
-    configure_kubernetes_service(configure_prefix, 'kubelet', kubelet_opts,
-                                 'kubelet-extra-args')
 
 
 @when('config.changed.ingress')
@@ -1261,7 +1122,7 @@ def persistent_call(cmd, retry_message):
 def set_label(label, value):
     nodename = get_node_name()
     cmd = 'kubectl --kubeconfig={0} label node {1} {2}={3} --overwrite'
-    cmd = cmd.format(kubeconfig_path, nodename, label, value)
+    cmd = cmd.format(kubelet_kubeconfig_path, nodename, label, value)
     cmd = cmd.split()
     retry = 'Failed to apply label %s=%s. Will retry.' % (label, value)
     if not persistent_call(cmd, retry):
@@ -1271,7 +1132,7 @@ def set_label(label, value):
 def remove_label(label):
     nodename = get_node_name()
     cmd = 'kubectl --kubeconfig={0} label node {1} {2}-'
-    cmd = cmd.format(kubeconfig_path, nodename, label)
+    cmd = cmd.format(kubelet_kubeconfig_path, nodename, label)
     cmd = cmd.split()
     retry = 'Failed to remove label {0}. Will retry.'.format(label)
     if not persistent_call(cmd, retry):
@@ -1450,7 +1311,7 @@ def update_registry_location():
         runtime = endpoint_from_flag('endpoint.container-runtime.available')
         if runtime:
             # Construct and send the sandbox image (pause container) to our runtime
-            uri = '{}/pause:3.4.1'.format(registry_location)
+            uri = get_sandbox_image_uri(registry_location)
             runtime.set_config(
                 sandbox_image=uri
             )
@@ -1481,65 +1342,6 @@ def get_registry_location():
     return registry
 
 
-def configure_default_cni():
-    """Set the default CNI configuration to be used by CNI clients
-    (kubelet, containerd).
-
-    CNI clients choose whichever CNI config in /etc/cni/net.d/ is
-    alphabetically first, so we accomplish this by creating a file named
-    /etc/cni/net.d/05-default.conflist, which is alphabetically earlier than
-    typical CNI config names, e.g. 10-flannel.conflist and 10-calico.conflist
-
-    The created 05-default.conflist file is a symlink to whichever CNI config
-    is actually going to be used.
-    """
-    # Clean up current default
-    cni_conf_dir = '/etc/cni/net.d'
-    for filename in os.listdir(cni_conf_dir):
-        if filename.startswith('05-default.'):
-            os.remove(cni_conf_dir + '/' + filename)
-
-    # Set new default
-    kube_control = endpoint_from_flag('kube-control.default_cni.available')
-    default_cni = kube_control.get_default_cni()
-    cni = endpoint_from_flag('cni.available')
-    cni_conf = cni.get_config(default=default_cni)
-    source = cni_conf['cni-conf-file']
-    dest = cni_conf_dir + '/' + '05-default.' + source.split('.')[-1]
-    os.symlink(source, dest)
-
-
 @when('ingress-proxy.available')
 def configure_ingress_proxy(ingress_proxy):
     ingress_proxy.configure(port='80')
-
-
-def workaround_lxd_kernel_params():
-    '''
-    Workaround for kubelet not starting in LXD when kernel params are not set
-    to the desired values.
-    '''
-    if is_container():
-        hookenv.log('LXD detected, faking kernel params via bind mounts')
-        root_dir = '/root/cdk/lxd-kernel-params'
-        os.makedirs(root_dir, exist_ok=True)
-        # Kernel params taken from:
-        # https://github.com/kubernetes/kubernetes/blob/v1.22.0/pkg/kubelet/cm/container_manager_linux.go#L421-L426
-        # https://github.com/kubernetes/kubernetes/blob/v1.22.0/pkg/util/sysctl/sysctl.go#L30-L64
-        params = {
-            'vm.overcommit_memory': 1,
-            'vm.panic_on_oom': 0,
-            'kernel.panic': 10,
-            'kernel.panic_on_oops': 1,
-            'kernel.keys.root_maxkeys': 1000000,
-            'kernel.keys.root_maxbytes': 1000000 * 25
-        }
-        for param, param_value in params.items():
-            fake_param_path = root_dir + '/' + param
-            with open(fake_param_path, 'w') as f:
-                f.write(str(param_value))
-            real_param_path = '/proc/sys/' + param.replace('.', '/')
-            fstab_add(fake_param_path, real_param_path, 'none', 'bind')
-        subprocess.check_call(['mount', '-a'])
-    else:
-        hookenv.log('LXD not detected, not faking kernel params')
