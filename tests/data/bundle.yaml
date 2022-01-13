@@ -39,7 +39,7 @@ services:
       flannel-amd64: 653
       flannel-arm64: 650
       flannel-s390x: 637
-  kubernetes-master:
+  kubernetes-control-plane:
     charm: cs:~containers/kubernetes-master
     channel: edge
     constraints: cores=2 mem=4G root-disk=16G
@@ -75,11 +75,11 @@ services:
     to:
     - '1'
 relations:
-- - kubernetes-master:kube-control
+- - kubernetes-control-plane:kube-control
   - kubernetes-worker:kube-control
-- - kubernetes-master:certificates
+- - kubernetes-control-plane:certificates
   - easyrsa:client
-- - kubernetes-master:etcd
+- - kubernetes-control-plane:etcd
   - etcd:db
 - - kubernetes-worker:certificates
   - easyrsa:client
@@ -88,10 +88,10 @@ relations:
 - - flannel:etcd
   - etcd:db
 - - flannel:cni
-  - kubernetes-master:cni
+  - kubernetes-control-plane:cni
 - - flannel:cni
   - kubernetes-worker:cni
 - - containerd:containerd
   - kubernetes-worker:container-runtime
 - - containerd:containerd
-  - kubernetes-master:container-runtime
+  - kubernetes-control-plane:container-runtime

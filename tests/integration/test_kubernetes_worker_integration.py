@@ -10,9 +10,9 @@ log = logging.getLogger(__name__)
 
 
 def _check_status_messages(ops_test):
-    """ Validate that the status messages are correct. """
+    """Validate that the status messages are correct."""
     expected_messages = {
-        "kubernetes-master": "Kubernetes master running.",
+        "kubernetes-control-plane": "Kubernetes master running.",
         "kubernetes-worker": "Kubernetes worker running.",
     }
     for app, message in expected_messages.items():
@@ -54,17 +54,18 @@ async def test_build_and_deploy(ops_test):
 
 
 async def test_kube_api_endpoint(ops_test):
-    """ Validate that adding the kube-api-endpoint relation works """
+    """Validate that adding the kube-api-endpoint relation works"""
     await ops_test.model.add_relation(
-        "kubernetes-master:kube-api-endpoint", "kubernetes-worker:kube-api-endpoint"
+        "kubernetes-control-plane:kube-api-endpoint",
+        "kubernetes-control-plane:kube-api-endpoint",
     )
 
     # It can take some time for the relation hook to trigger, which can lead to
     # wait_for_idle giving a false positive.
-    k8s_master = ops_test.model.applications["kubernetes-master"].units[0]
+    k8s_cp = ops_test.model.applications["kubernetes-control-plane"].units[0]
     waiting_msg = "Waiting for kube-api-endpoint relation"
     await ops_test.model.block_until(
-        lambda: k8s_master.workload_status_message == waiting_msg,
+        lambda: k8s_cp.workload_status_message == waiting_msg,
         timeout=5 * 60,
     )
 
