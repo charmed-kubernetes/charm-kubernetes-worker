@@ -15,7 +15,8 @@ async def _retrieve_url(charm, arch, target_file):
         charm=charm,
         arch=arch,
     )
-    urlretrieve(url, target_file)
+    path, _ = urlretrieve(url, target_file)
+    return Path(path)
 
 
 def _check_status_messages(ops_test):
@@ -30,10 +31,12 @@ def _check_status_messages(ops_test):
 
 
 @pytest.fixture()
-async def setup_resources(ops_test, tmpdir):
+async def setup_resources(ops_test):
     """Provides the cni resources needed to deploy the charm."""
     cwd = Path.cwd()
     current_resources = list(cwd.glob("*.tgz"))
+    tmpdir = ops_test.tmp_path / "resources"
+    tmpdir.mkdir(parents=True, exist_ok=True)
     if not current_resources:
         # If they are not locally available, try to build them
         log.info("Build Resources...")
@@ -47,13 +50,15 @@ async def setup_resources(ops_test, tmpdir):
     if not current_resources:
         # if we couldn't build them, just download a fixed version
         log.info("Downloading Resources...")
-        await asyncio.gather(
+        current_resources = await asyncio.gather(
             *(
                 _retrieve_url(816, arch, tmpdir / f"cni-{arch}.tgz")
                 for arch in ("amd64", "arm64", "s390x")
-            )
+            ), return_exceptions=True
         )
-        current_resources = list(Path(tmpdir).glob("*.tgz"))
+    for resource in current_resources:
+        if not isinstance(resource, Path):
+            pytest.fail("Failed to gather resource\n\t{}".format(resource))
 
     yield current_resources
 
