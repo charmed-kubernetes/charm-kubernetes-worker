@@ -116,7 +116,7 @@ async def test_kube_api_endpoint(ops_test):
     """Validate that adding the kube-api-endpoint relation works"""
     await ops_test.model.add_relation(
         "kubernetes-control-plane:kube-api-endpoint",
-        "kubernetes-control-plane:kube-api-endpoint",
+        "kubernetes-worker:kube-api-endpoint",
     )
 
     # It can take some time for the relation hook to trigger, which can lead to
