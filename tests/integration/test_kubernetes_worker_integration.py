@@ -102,6 +102,8 @@ async def test_build_and_deploy(ops_test, setup_resources):
             )
         raise
 
+    _check_status_messages(ops_test)
+
 
 async def juju_run(unit, cmd):
     result = await unit.run(cmd)

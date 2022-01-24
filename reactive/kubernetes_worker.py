@@ -458,7 +458,7 @@ def deprecated_extra_args():
         # Parse help output into a format we can check easily
         cmd = [service, '-h']
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        sections = re.split(r'\n\s*--', output.decode('utf-8'))[1:]
+        sections = re.split(r'\n\s*(?:-\S, )?--', output.decode('utf-8'))[1:]
         partitioned_sections = [section.partition(' ') for section in sections]
         arg_help = {part[0]: part[2] for part in partitioned_sections}
 
