@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from urllib.request import urlretrieve
 from pathlib import Path
@@ -88,9 +89,9 @@ async def test_build_and_deploy(ops_test, setup_resources):
     try:
         await ops_test.model.wait_for_idle(wait_for_active=True, timeout=60 * 60)
     except asyncio.TimeoutError:
-        if "kubernetes-master" not in ops_test.model.applications:
+        if "kubernetes-control-plane" not in ops_test.model.applications:
             raise
-        app = ops_test.model.applications["kubernetes-master"]
+        app = ops_test.model.applications["kubernetes-control-plane"]
         if not app.units:
             raise
         unit = app.units[0]
@@ -123,10 +124,18 @@ async def test_kube_api_endpoint(ops_test):
     # wait_for_idle giving a false positive.
     k8s_cp = ops_test.model.applications["kubernetes-control-plane"].units[0]
     waiting_msg = "Waiting for kube-api-endpoint relation"
-    await ops_test.model.block_until(
-        lambda: k8s_cp.workload_status_message == waiting_msg,
-        timeout=5 * 60,
-    )
+    try:
+        await ops_test.model.block_until(
+            lambda: k8s_cp.workload_status_message == waiting_msg,
+            timeout=5 * 60,
+        )
+    except asyncio.TimeoutError:
+        pass
+
+    goal_state = await juju_run(k8s_cp, "goal-state --format=json")
+    relation_status = json.loads(goal_state)
+    kube_api_endpoint = relation_status["relations"]["kube-api-endpoint"]
+    assert kube_api_endpoint["kubernetes-worker"]["status"] == "joined"
 
     await ops_test.model.wait_for_idle(wait_for_active=True, timeout=10 * 60)
     _check_status_messages(ops_test)

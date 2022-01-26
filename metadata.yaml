@@ -26,7 +26,7 @@ requires:
   kube-api-endpoint:
     # kube-api-endpoint is not recommended as the API endpoints will be provided
     # via the kube-control relation. However, it can be used to override those
-    # endpoints if you need to inject a reverse proxy between the master and workers.
+    # endpoints if you need to inject a reverse proxy between the control-plane and workers.
     interface: http
   kube-control:
     interface: kube-control
