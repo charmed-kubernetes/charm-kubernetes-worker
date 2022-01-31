@@ -21,15 +21,11 @@ services:
     to:
     - '1'
   etcd:
-    charm: cs:~containers/etcd
-    channel: edge
+    charm: etcd
+    channel: latest/edge
     num_units: 1
     options:
       channel: 3.4/stable
-    resources:
-      core: 0
-      etcd: 3
-      snapshot: 0
     to:
     - '0'
   flannel:
@@ -39,22 +35,14 @@ services:
       flannel-amd64: 653
       flannel-arm64: 650
       flannel-s390x: 637
-  kubernetes-master:
-    charm: cs:~containers/kubernetes-master
-    channel: edge
+  kubernetes-control-plane:
+    charm: kubernetes-control-plane
+    channel: latest/edge
     constraints: cores=2 mem=4G root-disk=16G
     expose: true
     num_units: 1
     options:
       channel: 1.20/stable
-    resources:
-      cdk-addons: 0
-      core: 0
-      kube-apiserver: 0
-      kube-controller-manager: 0
-      kube-proxy: 0
-      kube-scheduler: 0
-      kubectl: 0
     to:
     - '0'
   kubernetes-worker:
@@ -75,11 +63,11 @@ services:
     to:
     - '1'
 relations:
-- - kubernetes-master:kube-control
+- - kubernetes-control-plane:kube-control
   - kubernetes-worker:kube-control
-- - kubernetes-master:certificates
+- - kubernetes-control-plane:certificates
   - easyrsa:client
-- - kubernetes-master:etcd
+- - kubernetes-control-plane:etcd
   - etcd:db
 - - kubernetes-worker:certificates
   - easyrsa:client
@@ -88,10 +76,10 @@ relations:
 - - flannel:etcd
   - etcd:db
 - - flannel:cni
-  - kubernetes-master:cni
+  - kubernetes-control-plane:cni
 - - flannel:cni
   - kubernetes-worker:cni
 - - containerd:containerd
   - kubernetes-worker:container-runtime
 - - containerd:containerd
-  - kubernetes-master:container-runtime
+  - kubernetes-control-plane:container-runtime

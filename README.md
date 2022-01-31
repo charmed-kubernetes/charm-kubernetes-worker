@@ -6,7 +6,7 @@ This charm deploys a container runtime, and additionally stands up the Kubernete
 worker applications: kubelet, and kube-proxy.
 
 In order for this charm to be useful, it should be deployed with its companion
-charm [kubernetes-master](https://jujucharms.com/u/containers/kubernetes-master)
+charm [kubernetes-control-plane](https://jujucharms.com/u/containers/kubernetes-master)
 and linked with an SDN-Plugin and a container runtime such as
 [containerd](https://jaas.ai/u/containers/containerd).
 
