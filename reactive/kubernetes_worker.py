@@ -589,7 +589,8 @@ def watch_for_changes():
           'kubernetes-worker.cloud.blocked',
           'upgrade.series.in-progress')
 @when_any('kube-control.api_endpoints.available',
-          'kube-api-endpoint.available')
+          'kube-api-endpoint.available',
+          'endpoint.kube-control.has-xcp.changed')
 def start_worker():
     ''' Start kubelet using the provided API and DNS info.'''
     # Note that the DNS server doesn't necessarily exist at this point. We know
@@ -621,7 +622,7 @@ def start_worker():
 
     create_config(servers[get_unit_number() % len(servers)], creds)
     configure_default_cni(kube_control.get_default_cni())
-    configure_kubelet(dns_domain, dns_ip, registry)
+    configure_kubelet(dns_domain, dns_ip, registry, has_xcp=kube_control.has_xcp)
     configure_kube_proxy(configure_prefix, servers,
                          cluster_cidr)
     set_state('kubernetes-worker.config.created')
@@ -630,6 +631,7 @@ def start_worker():
     set_state('kubernetes-worker.label-config-required')
     set_state('nrpe-external-master.reconfigure')
     remove_state('kubernetes-worker.restart-needed')
+    remove_state('endpoint.kube-control.has-xcp.changed')
 
 
 @when('config.changed.labels')
