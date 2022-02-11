@@ -625,7 +625,11 @@ def start_worker():
 
     create_config(servers[get_unit_number() % len(servers)], creds)
     configure_default_cni(kube_control.get_default_cni())
-    configure_kubelet(dns_domain, dns_ip, registry, has_xcp=has_xcp)
+    try:
+        configure_kubelet(dns_domain, dns_ip, registry, has_xcp=has_xcp)
+    except TypeError:
+        # older kubernetes-common doesn't support the has_xcp flag
+        configure_kubelet(dns_domain, dns_ip, registry)
     configure_kube_proxy(configure_prefix, servers,
                          cluster_cidr)
     set_state('kubernetes-worker.config.created')
