@@ -96,3 +96,7 @@ def test_xcp(dea, *_):
     kubernetes_worker.start_worker()
     assert kubernetes_worker.configure_kubelet.called
     assert kubernetes_worker.configure_kubelet.call_args == (ANY, {"has_xcp": False})
+
+    endpoint_from_flag().has_xcp = True
+    kubernetes_worker.start_worker()
+    assert kubernetes_worker.configure_kubelet.call_args == (ANY, {"has_xcp": True})
