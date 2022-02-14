@@ -1,11 +1,17 @@
 import pathlib
 import unittest.mock
+from collections import defaultdict
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 from reactive import kubernetes_worker
-from charms.reactive import set_flag, clear_flag
-from charmhelpers.core import hookenv
+from charms.reactive import (  # auto-mocked
+    set_flag, clear_flag,
+    endpoint_from_flag,
+    endpoint_from_name,
+)
+from charmhelpers.core import hookenv  # auto-mocked
+from charms.layer import kubernetes_common  # auto-mocked
 
 
 def patch_fixture(patch_target):
@@ -75,3 +81,22 @@ def test_deprecated_extra_args(mock_check_output, request):
         ("kubelet-extra-args", "alsologtostderr"),
         ("proxy-extra-args", "log-dir"),
     ]
+
+
+@unittest.mock.patch("reactive.kubernetes_worker.check_call")
+@unittest.mock.patch("reactive.kubernetes_worker.deprecated_extra_args")
+def test_xcp(dea, *_):
+    dea.return_value = []
+    kubernetes_worker.db.set("credentials", defaultdict(str))
+    endpoint_from_flag().has_xcp = False
+    endpoint_from_name().services.return_value = [
+        {"hosts": [{"hostname": "foo", "port": "80"}]}
+    ]
+    kubernetes_common.get_unit_number.return_value = 0
+    kubernetes_worker.start_worker()
+    assert kubernetes_worker.configure_kubelet.called
+    assert kubernetes_worker.configure_kubelet.call_args == (ANY, {"has_xcp": False})
+
+    endpoint_from_flag().has_xcp = True
+    kubernetes_worker.start_worker()
+    assert kubernetes_worker.configure_kubelet.call_args == (ANY, {"has_xcp": True})
