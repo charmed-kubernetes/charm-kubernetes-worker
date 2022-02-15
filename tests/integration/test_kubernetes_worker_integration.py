@@ -1,23 +1,12 @@
 import asyncio
 import json
 import logging
-from urllib.request import urlretrieve
 from pathlib import Path
 import shlex
 
 import pytest
 
 log = logging.getLogger(__name__)
-CNI_ARCH_URL = "https://api.jujucharms.com/charmstore/v5/~containers/kubernetes-worker-{charm}/resource/cni-{arch}"  # noqa
-
-
-async def _retrieve_url(charm, arch, target_file):
-    url = CNI_ARCH_URL.format(
-        charm=charm,
-        arch=arch,
-    )
-    path, _ = urlretrieve(url, target_file)
-    return Path(path)
 
 
 def _check_status_messages(ops_test):
@@ -31,48 +20,28 @@ def _check_status_messages(ops_test):
             assert unit.workload_status_message == message
 
 
-@pytest.fixture()
-async def setup_resources(ops_test):
-    """Provides the cni resources needed to deploy the charm."""
-    cwd = Path.cwd()
-    current_resources = list(cwd.glob("*.tgz"))
-    tmpdir = ops_test.tmp_path / "resources"
-    tmpdir.mkdir(parents=True, exist_ok=True)
-    if not current_resources:
-        # If they are not locally available, try to build them
-        log.info("Build Resources...")
-        build_script = cwd / "build-cni-resources.sh"
-        rc, stdout, stderr = await ops_test.run(
-            *shlex.split(f"sudo {build_script}"), cwd=tmpdir, check=False
-        )
-        if rc != 0:
-            log.warning(f"build-cni-resources failed: {(stderr or stdout).strip()}")
-        current_resources = list(Path(tmpdir).glob("*.tgz"))
-    if not current_resources:
-        # if we couldn't build them, just download a fixed version
-        log.info("Downloading Resources...")
-        current_resources = await asyncio.gather(
-            *(
-                _retrieve_url(816, arch, tmpdir / f"cni-{arch}.tgz")
-                for arch in ("amd64", "arm64", "s390x")
-            ), return_exceptions=True
-        )
-    for resource in current_resources:
-        if not isinstance(resource, Path):
-            pytest.fail("Failed to gather resource\n\t{}".format(resource))
-
-    yield current_resources
-
-
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test, setup_resources):
+async def test_build_and_deploy(ops_test):
     log.info("Build Charm...")
     charm = await ops_test.build_charm(".")
 
+    build_script = Path.cwd() / "build-cni-resources.sh"
+    resources = await ops_test.build_resources(build_script)
+    expected_resources = {"cni-amd64", "cni-arm64", "cni-s390x"}
+
+    if all(rsc.stem in expected_resources for rsc in resources):
+        resources = {rsc.stem.replace("-", "_"): rsc for rsc in resources}
+    else:
+        log.info("Failed to build resources, downloading from latest/edge")
+        arch_resources = ops_test.arch_specific_resources(charm)
+        resources = await ops_test.download_resources(charm, resources=arch_resources)
+        resources = {name.replace("-", "_"): rsc for name, rsc in resources.items()}
+
+    assert resources, "Failed to build or download charm resources."
+
     log.info("Build Bundle...")
-    charm_resources = {rsc.stem.replace("-", "_"): rsc for rsc in setup_resources}
     bundle = ops_test.render_bundle(
-        "tests/data/bundle.yaml", worker_charm=charm, **charm_resources
+        "tests/data/bundle.yaml", worker_charm=charm, **resources
     )
 
     log.info("Deploy Bundle...")
