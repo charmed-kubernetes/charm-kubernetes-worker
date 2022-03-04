@@ -6,7 +6,8 @@ import pytest
 from unittest.mock import patch, ANY
 from reactive import kubernetes_worker
 from charms.reactive import (  # auto-mocked
-    set_flag, clear_flag,
+    set_flag,
+    clear_flag,
     endpoint_from_flag,
     endpoint_from_name,
 )
