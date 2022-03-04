@@ -630,18 +630,13 @@ def start_worker():
     set_state('kubernetes-worker.config.created')
     restart_unit_services()
     update_kubelet_status()
-    set_state('kubernetes-worker.label-config-required')
+    set_state('node.label-config-required')
     set_state('nrpe-external-master.reconfigure')
     remove_state('kubernetes-worker.restart-needed')
     remove_state('endpoint.kube-control.has-xcp.changed')
 
 
-@when('config.changed.labels')
-def handle_labels_changed():
-    set_state('kubernetes-worker.label-config-required')
-
-
-@when('kubernetes-worker.label-config-required',
+@when('node.label-config-required',
       'kubernetes-worker.config.created')
 def apply_node_labels():
     # Label configuration complete.
@@ -650,7 +645,7 @@ def apply_node_labels():
         label_maker.apply_node_labels()
     except LabelMaker.NodeLabelError:
         return
-    remove_state('kubernetes-worker.label-config-required')
+    remove_state('node.label-config-required')
 
 
 @when_any('config.changed.kubelet-extra-args',
