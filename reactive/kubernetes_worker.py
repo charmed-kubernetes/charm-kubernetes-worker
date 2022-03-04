@@ -124,7 +124,7 @@ def upgrade_charm():
         remove_state('kubernetes-worker.gpu.enabled')
         try:
             disable_gpu()
-        except ApplyNodeLabelFailed:
+        except LabelMaker.NodeLabelError:
             # Removing node label failed. Probably the master is unavailable.
             # Proceed with the upgrade in hope GPUs will still be there.
             hookenv.log('Failed to remove GPU labels. Proceed with upgrade.')
