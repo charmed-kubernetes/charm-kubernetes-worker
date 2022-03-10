@@ -110,3 +110,18 @@ async def test_kube_api_endpoint(ops_test):
 
     await ops_test.model.wait_for_idle(wait_for_active=True, timeout=10 * 60)
     _check_status_messages(ops_test)
+
+
+async def test_node_label(ops_test):
+    app = ops_test.model.applications["kubernetes-control-plane"]
+    unit = app.units[0]
+    nodes = await juju_run(
+        unit, "kubectl --kubeconfig /root/.kube/config get nodes -o json"
+    )
+    nodes = json.loads(nodes)
+    for node in nodes["items"]:
+        if "juju-application" in node["metadata"]["labels"]:
+            assert node["metadata"]["labels"]["juju-application"] in [
+                "kubernetes-worker",
+                "kubernetes-control-plane",
+            ]

@@ -9,12 +9,6 @@ options:
       Set to false if deploying an alternate ingress controller, and note
       that you may need to manually open ports 80 and 443 on the nodes:
         juju run --application kubernetes-worker -- open-port 80 && open-port 443
-  labels:
-    type: string
-    default: ""
-    description: |
-      Labels can be used to organize and to select subsets of nodes in the
-      cluster. Declare node labels in key=value format, separated by spaces.
   channel:
     type: string
     default: "1.23/edge"
