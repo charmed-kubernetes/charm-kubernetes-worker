@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 import shlex
+import re
 
 import pytest
 
@@ -11,13 +12,14 @@ log = logging.getLogger(__name__)
 
 def _check_status_messages(ops_test):
     """Validate that the status messages are correct."""
-    expected_messages = {
-        "kubernetes-control-plane": "Kubernetes master running.",
-        "kubernetes-worker": "Kubernetes worker running.",
+    is_running = re.compile(r"Kubernetes \s+ running.")
+    expected_running_apps = {
+        "kubernetes-control-plane",
+        "kubernetes-worker",
     }
-    for app, message in expected_messages.items():
+    for app in expected_running_apps:
         for unit in ops_test.model.applications[app].units:
-            assert unit.workload_status_message == message
+            assert is_running.match(unit.workload_status_message)
 
 
 @pytest.mark.abort_on_fail

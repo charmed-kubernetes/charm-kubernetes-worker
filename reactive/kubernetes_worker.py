@@ -73,7 +73,7 @@ from charms.layer.kubernetes_common import get_sandbox_image_uri
 from charms.layer.kubernetes_common import configure_default_cni
 from charms.layer.kubernetes_common import kubelet_kubeconfig_path
 
-from charms.layer.kubernetes_master_worker_base import LabelMaker
+from charms.layer.kubernetes_node_base import LabelMaker
 
 from charms.layer.nagios import install_nagios_plugin_from_text
 from charms.layer.nagios import remove_nagios_plugin
@@ -127,7 +127,7 @@ def upgrade_charm():
         try:
             disable_gpu()
         except LabelMaker.NodeLabelError:
-            # Removing node label failed. Probably the master is unavailable.
+            # Removing node label failed. Probably the control-plane is unavailable.
             # Proceed with the upgrade in hope GPUs will still be there.
             hookenv.log("Failed to remove GPU labels. Proceed with upgrade.")
 
@@ -1056,15 +1056,15 @@ def disable_gpu():
 
 @when("kubernetes-worker.gpu.enabled")
 @when("kube-control.connected")
-def notify_master_gpu_enabled(kube_control):
-    """Notify kubernetes-master that we're gpu-enabled."""
+def notify_control_plane_gpu_enabled(kube_control):
+    """Notify kubernetes-control-plane that we're gpu-enabled."""
     kube_control.set_gpu(True)
 
 
 @when_not("kubernetes-worker.gpu.enabled")
 @when("kube-control.connected")
-def notify_master_gpu_not_enabled(kube_control):
-    """Notify kubernetes-master that we're not gpu-enabled."""
+def notify_control_planer_gpu_not_enabled(kube_control):
+    """Notify kubernetes-control-plane that we're not gpu-enabled."""
     kube_control.set_gpu(False)
 
 
@@ -1087,8 +1087,8 @@ def catch_change_in_creds(kube_control):
     creds = kube_control.get_auth_credentials(nodeuser)
     if creds and creds["user"] == nodeuser:
         # We need to cache the credentials here because if the
-        # master changes (master leader dies and replaced by a new one)
-        # the new master will have no recollection of our certs.
+        # control-plane changes (control-plane leader dies and replaced by a new one)
+        # the new control-plane will have no recollection of our certs.
         db.set("credentials", creds)
         set_state("worker.auth.bootstrapped")
         if data_changed("kube-control.creds", creds):
@@ -1112,13 +1112,13 @@ def missing_kube_control():
     if "kube-control" in goal_state.get("relations", {}):
         if not is_flag_set("kube-control.connected"):
             hookenv.status_set(
-                "waiting", "Waiting for kubernetes-master to become ready"
+                "waiting", "Waiting for kubernetes-control-plane to become ready"
             )
             return True
     else:
         hookenv.status_set(
             "blocked",
-            "Relate {}:kube-control kubernetes-master:kube-control".format(
+            "Relate {}:kube-control kubernetes-control-plane:kube-control".format(
                 hookenv.service_name()
             ),
         )
@@ -1337,7 +1337,7 @@ def update_registry_location():
 def get_registry_location():
     """Get the image registry from the kube-control relation.
 
-    If an image-registry has been configured on the k8s-master, it will be set
+    If an image-registry has been configured on the k8s-control-plane, it will be set
     set on the kube-control relation. This function returns that value stripped
     of any trailing slash. If the relation or registry location are missing,
     this returns an empty string.
