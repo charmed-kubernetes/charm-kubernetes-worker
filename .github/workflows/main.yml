@@ -13,8 +13,22 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-check
           fail-on-error: true
-  lint:
-    name: Lint
+  test-wheelhouse:
+    name: Test Wheelhouse
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+    - name: Setup Python
+      uses: actions/setup-python@v2
+    - name: Install Dependencies
+      run: |
+        pip install tox
+        sudo snap install charm --classic
+    - name: Run lint
+      run: tox -vve validate-wheelhouse
+  lint-unit:
+    name: Lint, Unit
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,25 +44,7 @@ jobs:
       run: |
         pip install tox
     - name: Run lint
-      run: tox -vve lint
-  unit-test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python: [3.6, 3.7, 3.8, 3.9]
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v2
-      - name: Setup Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Install Dependencies
-        run: |
-          pip install tox
-      - name: Run test
-        run: tox -vve unit
+      run: tox -vve lint, unit
   integration-test:
     name: Integration test with VMWare
     runs-on: self-hosted
