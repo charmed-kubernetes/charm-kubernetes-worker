@@ -107,6 +107,10 @@ def upgrade_charm():
         # minor change, just for consistency
         remove_state("kubernetes-worker.cloud-request-sent")
         set_state("kubernetes-worker.cloud.request-sent")
+    if is_state("kubernetes-worker.snaps.installed"):
+        # consistent with layer-kubernetes-node-base
+        remove_state("kubernetes-worker.snaps.installed")
+        set_state("kubernetes-node.snaps.installed")
 
     set_state("config.changed.install_from_upstream")
     hookenv.atexit(remove_state, "config.changed.install_from_upstream")
@@ -301,13 +305,13 @@ def install_snaps():
     hookenv.status_set("maintenance", "Installing kube-proxy snap")
     snap.install("kube-proxy", channel=channel, classic=True)
     calculate_and_store_resource_checksums(checksum_prefix, snap_resources)
-    set_state("kubernetes-worker.snaps.installed")
+    set_state("kubernetes-node.snaps.installed")
     set_state("kubernetes-worker.restart-needed")
     remove_state("kubernetes-worker.snaps.upgrade-needed")
     remove_state("kubernetes-worker.snaps.upgrade-specified")
 
 
-@when("kubernetes-worker.snaps.installed", "kube-control.cohort_keys.available")
+@when("kubernetes-node.snaps.installed", "kube-control.cohort_keys.available")
 @when_none("coordinator.granted.cohort", "coordinator.requested.cohort")
 def safely_join_cohort():
     """Coordinate the rollout of snap refreshes.
@@ -325,7 +329,7 @@ def safely_join_cohort():
 
 
 @when(
-    "kubernetes-worker.snaps.installed",
+    "kubernetes-node.snaps.installed",
     "kube-control.cohort_keys.available",
     "coordinator.granted.cohort",
 )
@@ -389,7 +393,7 @@ def shutdown():
     service_stop("snap.kube-proxy.daemon")
 
 
-@when("kubernetes-worker.snaps.installed")
+@when("kubernetes-node.snaps.installed")
 def set_app_version():
     """Declare the application version to juju"""
     cmd = ["kubelet", "--version"]
@@ -459,7 +463,7 @@ def charm_status():
     if is_state("kubernetes-worker.snaps.upgrade-needed"):
         hookenv.status_set("blocked", "Needs manual upgrade, run the upgrade action")
         return
-    if is_state("kubernetes-worker.snaps.installed"):
+    if is_state("kubernetes-node.snaps.installed"):
         update_kubelet_status()
         return
     else:
@@ -605,7 +609,7 @@ def watch_for_changes():
 
 
 @when(
-    "kubernetes-worker.snaps.installed",
+    "kubernetes-node.snaps.installed",
     "tls_client.ca.saved",
     "tls_client.certs.saved",
     "kube-control.dns.available",
