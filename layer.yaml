@@ -8,7 +8,7 @@ includes:
   - 'layer:nagios'
   - 'layer:tls-client'
   - 'layer:cdk-service-kicker'
-  - 'layer:kubernetes-master-worker-base'
+  - 'layer:kubernetes-node-base'
   - 'interface:http'
   - 'interface:kubernetes-cni'
   - 'interface:kube-control'

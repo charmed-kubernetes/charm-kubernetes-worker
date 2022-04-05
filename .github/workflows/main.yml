@@ -2,8 +2,28 @@ name: Test Suite
 on: [pull_request]
 
 jobs:
-  lint:
-    name: Lint
+  call-inclusive-naming-check:
+    name: Inclusive naming
+    uses: canonical-web-and-design/Inclusive-naming/.github/workflows/woke.yaml@main
+    with:
+      fail-on-error: "true"
+
+  test-wheelhouse:
+    name: Test Wheelhouse
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+    - name: Setup Python
+      uses: actions/setup-python@v2
+    - name: Install Dependencies
+      run: |
+        pip install tox
+        sudo snap install charm --classic
+    - name: Run validate-wheelhouse
+      run: tox -vve validate-wheelhouse
+  lint-unit:
+    name: Lint, Unit
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -18,26 +38,8 @@ jobs:
     - name: Install Dependencies
       run: |
         pip install tox
-    - name: Run lint
-      run: tox -vve lint
-  unit-test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python: [3.6, 3.7, 3.8, 3.9]
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v2
-      - name: Setup Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Install Dependencies
-        run: |
-          pip install tox
-      - name: Run test
-        run: tox -vve unit
+    - name: Run lint and unit tests
+      run: tox -vve lint, unit
   integration-test:
     name: Integration test with VMWare
     runs-on: self-hosted
