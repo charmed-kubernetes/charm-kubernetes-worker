@@ -1067,7 +1067,7 @@ def notify_control_plane_gpu_enabled(kube_control):
 
 @when_not("kubernetes-worker.gpu.enabled")
 @when("kube-control.connected")
-def notify_control_planer_gpu_not_enabled(kube_control):
+def notify_control_plane_gpu_not_enabled(kube_control):
     """Notify kubernetes-control-plane that we're not gpu-enabled."""
     kube_control.set_gpu(False)
 
