@@ -20,7 +20,7 @@ jobs:
       run: |
         pip install tox
         sudo snap install charm --classic
-    - name: Run lint
+    - name: Run validate-wheelhouse
       run: tox -vve validate-wheelhouse
   lint-unit:
     name: Lint, Unit
