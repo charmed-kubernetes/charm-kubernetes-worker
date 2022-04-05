@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 def _check_status_messages(ops_test):
     """Validate that the status messages are correct."""
-    is_running = re.compile(r"Kubernetes \s+ running.")
+    is_running = re.compile(r"Kubernetes \S+ running.")
     expected_running_apps = {
         "kubernetes-control-plane",
         "kubernetes-worker",
