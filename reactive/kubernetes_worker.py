@@ -1260,6 +1260,21 @@ def get_first_mount(mount_relation):
     return None
 
 
+@when("scrape.available")
+def scrape_available(scrape):
+    if hookenv.config().get("ingress"):
+        scrape.configure(
+            port=10254,
+            labels=dict(
+                juju_model=hookenv.model_name(),
+                juju_model_uuid=hookenv.model_uuid(),
+                juju_application=hookenv.application_name(),
+                juju_unit=hookenv.local_unit(),
+                service="nginx-ingress",
+            ),
+        )
+
+
 @when("nfs.available")
 def nfs_state_control(mount):
     """Determine if we should remove the state that controls the re-render
