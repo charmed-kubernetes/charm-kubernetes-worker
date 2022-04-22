@@ -843,7 +843,7 @@ def render_and_launch_ingress():
             context["ingress_image"] = "/".join(
                 [
                     registry_location or "us.gcr.io",
-                    "k8s-artifacts-prod/ingress-nginx/controller:v1.1.3",
+                    "k8s-artifacts-prod/ingress-nginx/controller:v1.2.0",
                 ]
             )
 
