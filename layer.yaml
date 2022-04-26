@@ -1,6 +1,7 @@
 repo: https://github.com/kubernetes/kubernetes.git
 includes:
   - 'layer:basic'
+  - 'layer:apt'
   - 'layer:debug'
   - 'layer:snap'
   - 'layer:leadership'
@@ -29,6 +30,11 @@ options:
       - 'ceph-common'
       - 'nfs-common'
       - 'socat'
+  apt:
+    packages: []
+    version_package: ""
+    full_version: !!bool "false"
+    keys: []
   tls-client:
     ca_certificate_path: '/root/cdk/ca.crt'
   cdk-service-kicker:
