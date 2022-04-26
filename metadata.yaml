@@ -49,6 +49,8 @@ provides:
     scope: container
   ingress-proxy:
     interface: http
+  scrape:
+    interface: prometheus
 resources:
   core:
     type: file
