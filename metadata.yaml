@@ -19,6 +19,7 @@ docs: https://discourse.charmhub.io/t/kubernetes-worker-docs-index/6104
 tags:
   - misc
 series:
+  - jammy
   - focal
   - bionic
   - xenial
