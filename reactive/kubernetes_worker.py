@@ -1029,6 +1029,10 @@ def enable_gpu():
         hookenv.log("Unable to communicate with the NVIDIA driver.")
         hookenv.log(cpe)
         return
+    except FileNotFoundError as fne:
+        hookenv.log("NVIDIA SMI not installed.")
+        hookenv.log(fne)
+        return
 
     label_maker = LabelMaker(kubeclientconfig_path)
     label_maker.set_label("gpu", "true")
