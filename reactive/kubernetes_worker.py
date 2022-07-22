@@ -37,11 +37,11 @@ from charms.reactive import set_state, set_flag
 from charms.reactive import is_state, is_flag_set, any_flags_set
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed, is_data_changed
-from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
 from charmhelpers.core.host import service_stop, service_restart
 from charmhelpers.core.host import service_pause, service_resume
+from charmhelpers.core.templating import render
 from charmhelpers.contrib.charmsupport import nrpe
 
 from charms.layer import kubernetes_common

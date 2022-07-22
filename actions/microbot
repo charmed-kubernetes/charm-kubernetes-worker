@@ -19,8 +19,8 @@ import sys
 
 from charmhelpers.core.hookenv import action_fail, action_get, action_set
 from charmhelpers.core.hookenv import unit_public_ip
+from charmhelpers.core.templating import render
 from charms.reactive import endpoint_from_flag
-from charms.templating.jinja2 import render
 from subprocess import call, check_output
 
 os.environ['PATH'] += os.pathsep + os.path.join(os.sep, 'snap', 'bin')

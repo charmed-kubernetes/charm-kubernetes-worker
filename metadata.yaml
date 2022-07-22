@@ -20,8 +20,8 @@ tags:
   - misc
 series:
   - focal
+  - jammy
   - bionic
-  - xenial
 subordinate: false
 requires:
   kube-api-endpoint:
