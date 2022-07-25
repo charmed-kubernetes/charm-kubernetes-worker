@@ -539,7 +539,11 @@ def update_kubelet_status():
         hookenv.status_set("waiting", msg)
         return
 
-    hookenv.status_set("active", "Kubernetes worker running.")
+    parenthetical = ""
+    if is_state("nvidia.ready") and not is_state("kubernetes-worker.gpu.enabled"):
+        parenthetical = " (without gpu support)"
+
+    hookenv.status_set("active", f"Kubernetes worker running{parenthetical}.")
 
 
 @when(
@@ -1028,6 +1032,10 @@ def enable_gpu():
     except CalledProcessError as cpe:
         hookenv.log("Unable to communicate with the NVIDIA driver.")
         hookenv.log(cpe)
+        return
+    except FileNotFoundError as fne:
+        hookenv.log("NVIDIA SMI not installed.")
+        hookenv.log(fne)
         return
 
     label_maker = LabelMaker(kubeclientconfig_path)
