@@ -966,7 +966,7 @@ def get_kube_api_servers():
 @when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
 def update_nrpe_config():
     services = ["snap.{}.daemon".format(s) for s in worker_services]
-    data = render("nagios_plugin.py", context={"node_name": get_node_name()})
+    data = render("nagios_plugin.py", None, {"node_name": get_node_name()})
     plugin_path = install_nagios_plugin_from_text(data, "check_k8s_worker.py")
     hostname = nrpe.get_nagios_hostname()
     current_unit = nrpe.get_nagios_unit_name()
