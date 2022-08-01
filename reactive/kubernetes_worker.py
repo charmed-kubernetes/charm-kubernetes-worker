@@ -37,11 +37,11 @@ from charms.reactive import set_state, set_flag
 from charms.reactive import is_state, is_flag_set, any_flags_set
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed, is_data_changed
-from charms.templating.jinja2 import render
 
 from charmhelpers.core import hookenv, unitdata
 from charmhelpers.core.host import service_stop, service_restart
 from charmhelpers.core.host import service_pause, service_resume
+from charmhelpers.core.templating import render
 from charmhelpers.contrib.charmsupport import nrpe
 
 from charms.layer import kubernetes_common
@@ -539,7 +539,11 @@ def update_kubelet_status():
         hookenv.status_set("waiting", msg)
         return
 
-    hookenv.status_set("active", "Kubernetes worker running.")
+    parenthetical = ""
+    if is_state("nvidia.ready") and not is_state("kubernetes-worker.gpu.enabled"):
+        parenthetical = " (without gpu support)"
+
+    hookenv.status_set("active", f"Kubernetes worker running{parenthetical}.")
 
 
 @when(
@@ -962,7 +966,7 @@ def get_kube_api_servers():
 @when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
 def update_nrpe_config():
     services = ["snap.{}.daemon".format(s) for s in worker_services]
-    data = render("nagios_plugin.py", context={"node_name": get_node_name()})
+    data = render("nagios_plugin.py", None, {"node_name": get_node_name()})
     plugin_path = install_nagios_plugin_from_text(data, "check_k8s_worker.py")
     hostname = nrpe.get_nagios_hostname()
     current_unit = nrpe.get_nagios_unit_name()
@@ -1028,6 +1032,10 @@ def enable_gpu():
     except CalledProcessError as cpe:
         hookenv.log("Unable to communicate with the NVIDIA driver.")
         hookenv.log(cpe)
+        return
+    except FileNotFoundError as fne:
+        hookenv.log("NVIDIA SMI not installed.")
+        hookenv.log(fne)
         return
 
     label_maker = LabelMaker(kubeclientconfig_path)
