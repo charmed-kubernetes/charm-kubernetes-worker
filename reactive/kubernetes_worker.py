@@ -171,6 +171,10 @@ def upgrade_charm():
         kube_control = endpoint_from_flag("kube-control.connected")
         kube_control.manage_flags()
 
+    # Force reconfigure of nrpe config if conditions are right
+    if is_flag_set("nrpe-external-master.initial-config"):
+        remove_state("nrpe-external-master.initial-config")
+
     shutil.rmtree("/root/cdk/kubelet/dynamic-config", ignore_errors=True)
 
     # kubernetes-worker.cni-plugins.installed flag is deprecated but we still
@@ -956,6 +960,17 @@ def get_kube_api_servers():
 
 
 @when("kubernetes-worker.config.created")
+@when("nrpe-external-master.available")  # wokeignore:rule=master
+@when("kube-control.auth.available")
+@when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
+@when_not("nrpe-external-master.initial-config")
+def initial_nrpe_config():
+    """Configure nrpe checks the first time nrpe is related."""
+    set_state("nrpe-external-master.initial-config")  # wokeignore:rule=master
+    update_nrpe_config()
+
+
+@when("kubernetes-worker.config.created")
 @when("nrpe-external-master.available")
 @when("kube-control.auth.available")
 @when_any(
@@ -965,6 +980,7 @@ def get_kube_api_servers():
 )
 @when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
 def update_nrpe_config():
+    """Reconfigure nrpe checks."""
     services = ["snap.{}.daemon".format(s) for s in worker_services]
     data = render("nagios_plugin.py", None, {"node_name": get_node_name()})
     plugin_path = install_nagios_plugin_from_text(data, "check_k8s_worker.py")
@@ -993,7 +1009,6 @@ def update_nrpe_config():
                 check_call(cmd + [p])
 
         remove_state("nrpe-external-master.reconfigure")
-        set_state("nrpe-external-master.initial-config")
 
 
 @when_not("nrpe-external-master.available")
