@@ -172,8 +172,8 @@ def upgrade_charm():
         kube_control.manage_flags()
 
     # Force reconfigure of nrpe config if conditions are right
-    if is_flag_set("nrpe-external-master.initial-config"):
-        remove_state("nrpe-external-master.initial-config")
+    if is_flag_set("nrpe-external-master.initial-config"):  # wokeignore:rule=master
+        remove_state("nrpe-external-master.initial-config")  # wokeignore:rule=master
 
     shutil.rmtree("/root/cdk/kubelet/dynamic-config", ignore_errors=True)
 
@@ -963,7 +963,7 @@ def get_kube_api_servers():
 @when("nrpe-external-master.available")  # wokeignore:rule=master
 @when("kube-control.auth.available")
 @when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
-@when_not("nrpe-external-master.initial-config")
+@when_not("nrpe-external-master.initial-config")  # wokeignore:rule=master
 def initial_nrpe_config():
     """Configure nrpe checks the first time nrpe is related."""
     set_state("nrpe-external-master.initial-config")  # wokeignore:rule=master
