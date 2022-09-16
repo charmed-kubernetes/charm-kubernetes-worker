@@ -83,11 +83,16 @@ async def test_build_and_deploy(ops_test, series: str):
 
 
 async def juju_run(unit, cmd):
-    result = await unit.run(cmd)
-    code = result.results["Code"]
-    stdout = result.results.get("Stdout")
-    stderr = result.results.get("Stderr")
-    assert code == "0", f"{cmd} failed ({code}): {stderr or stdout}"
+    action = await unit.run(cmd)
+    await action.wait()
+    code = action.results.get("Code", action.results.get("return-code"))
+    if code is None:
+        log.error(f"Failed to find the return code in {action.results}")
+        return -1
+    code = int(code)
+    stdout = action.results.get("Stdout", action.results.get("stdout")) or ""
+    stderr = action.results.get("Stderr", action.results.get("stderr")) or ""
+    assert code == 0, f"{cmd} failed ({code}): {stderr or stdout}"
     return stdout
 
 
