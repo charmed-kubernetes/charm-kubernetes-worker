@@ -93,6 +93,11 @@ cpu_manager_state = "/var/lib/kubelet/cpu_manager_state"
 
 cohort_snaps = ["kubectl", "kubelet", "kube-proxy"]
 
+NRPE_EXTERNAL_INIT = "nrpe-external-master.initial-config"  # wokeignore:rule=master
+NRPE_EXTERNAL_RECONFIG = "nrpe-external-master.reconfigure"  # wokeignore:rule=master
+NRPE_EXTERNAL_AVAIL = "nrpe-external-master.available"  # wokeignore:rule=master
+
+
 os.environ["PATH"] += os.pathsep + os.path.join(os.sep, "snap", "bin")
 db = unitdata.kv()
 
@@ -172,8 +177,8 @@ def upgrade_charm():
         kube_control.manage_flags()
 
     # Force reconfigure of nrpe config if conditions are right
-    if is_flag_set("nrpe-external-master.initial-config"):  # wokeignore:rule=master
-        remove_state("nrpe-external-master.initial-config")  # wokeignore:rule=master
+    if is_flag_set(NRPE_EXTERNAL_INIT):
+        remove_state(NRPE_EXTERNAL_INIT)
 
     shutil.rmtree("/root/cdk/kubelet/dynamic-config", ignore_errors=True)
 
@@ -675,7 +680,7 @@ def start_worker():
     restart_unit_services()
     update_kubelet_status()
     set_state("kubernetes-worker.label-config-required")
-    set_state("nrpe-external-master.reconfigure")
+    set_state(NRPE_EXTERNAL_RECONFIG)
     remove_state("kubernetes-worker.restart-needed")
     remove_state("endpoint.kube-control.has-xcp.changed")
 
@@ -960,23 +965,23 @@ def get_kube_api_servers():
 
 
 @when("kubernetes-worker.config.created")
-@when("nrpe-external-master.available")  # wokeignore:rule=master
+@when(NRPE_EXTERNAL_AVAIL)
 @when("kube-control.auth.available")
 @when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
-@when_not("nrpe-external-master.initial-config")  # wokeignore:rule=master
+@when_not(NRPE_EXTERNAL_INIT)
 def initial_nrpe_config():
     """Configure nrpe checks the first time nrpe is related."""
-    set_state("nrpe-external-master.initial-config")  # wokeignore:rule=master
+    set_state(NRPE_EXTERNAL_INIT)
     update_nrpe_config()
 
 
 @when("kubernetes-worker.config.created")
-@when("nrpe-external-master.available")
+@when(NRPE_EXTERNAL_AVAIL)
 @when("kube-control.auth.available")
 @when_any(
     "config.changed.nagios_context",
     "config.changed.nagios_servicegroups",
-    "nrpe-external-master.reconfigure",
+    NRPE_EXTERNAL_RECONFIG,
 )
 @when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
 def update_nrpe_config():
@@ -1008,13 +1013,13 @@ def update_nrpe_config():
             if os.path.exists(p):
                 check_call(cmd + [p])
 
-        remove_state("nrpe-external-master.reconfigure")
+        remove_state(NRPE_EXTERNAL_RECONFIG)
 
 
-@when_not("nrpe-external-master.available")
-@when("nrpe-external-master.initial-config")
+@when_not(NRPE_EXTERNAL_AVAIL)
+@when(NRPE_EXTERNAL_INIT)
 def remove_nrpe_config():
-    remove_state("nrpe-external-master.initial-config")
+    remove_state(NRPE_EXTERNAL_INIT)
     remove_nagios_plugin("check_k8s_worker.py")
 
     # The current nrpe-external-master interface doesn't handle a lot of logic,
