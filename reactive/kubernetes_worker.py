@@ -37,6 +37,7 @@ from charms.reactive import set_state, set_flag
 from charms.reactive import is_state, is_flag_set, any_flags_set
 from charms.reactive import when, when_any, when_not, when_none
 from charms.reactive import data_changed, is_data_changed
+from charms.reactive import register_trigger
 
 from charmhelpers.core import hookenv, unitdata
 from charmhelpers.core.host import service_stop, service_restart
@@ -100,6 +101,12 @@ NRPE_EXTERNAL_AVAIL = "nrpe-external-master.available"  # wokeignore:rule=master
 
 os.environ["PATH"] += os.pathsep + os.path.join(os.sep, "snap", "bin")
 db = unitdata.kv()
+
+
+register_trigger(
+    when="endpoint.azure.ready.changed",
+    clear_flag="kubernetes-worker.cloud.ready"
+)
 
 
 @hook("upgrade-charm")
@@ -1265,6 +1272,7 @@ def cloud_ready():
         write_gcp_snap_config("kubelet")
     elif is_state("endpoint.azure.ready"):
         write_azure_snap_config("kubelet")
+        clear_flag("endpoint.azure.ready.changed")
     set_state("kubernetes-worker.cloud.ready")
     set_state("kubernetes-worker.restart-needed")  # force restart
 
