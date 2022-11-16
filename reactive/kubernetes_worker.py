@@ -104,8 +104,7 @@ db = unitdata.kv()
 
 
 register_trigger(
-    when="endpoint.azure.ready.changed",
-    clear_flag="kubernetes-worker.cloud.ready"
+    when="endpoint.azure.ready.changed", clear_flag="kubernetes-worker.cloud.ready"
 )
 
 
