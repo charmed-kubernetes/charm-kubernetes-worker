@@ -19,9 +19,8 @@ docs: https://discourse.charmhub.io/t/kubernetes-worker-docs-index/6104
 tags:
   - misc
 series:
-  - focal
   - jammy
-  - bionic
+  - focal
 subordinate: false
 requires:
   kube-api-endpoint:
