@@ -34,7 +34,7 @@ async def test_build_and_deploy(ops_test, series: str):
     if resources and all(rsc.stem in expected_resources for rsc in resources):
         resources = {rsc.stem.replace("-", "_"): rsc for rsc in resources}
     else:
-        log.info("Failed to build resources, downloading from latest/edge")
+        log.info("Failed to build resources, downloading from 1.26/stable")
         arch_resources = ops_test.arch_specific_resources(charm)
         resources = await ops_test.download_resources(charm, resources=arch_resources)
         resources = {name.replace("-", "_"): rsc for name, rsc in resources.items()}
@@ -44,7 +44,7 @@ async def test_build_and_deploy(ops_test, series: str):
     log.info("Build Bundle...")
     context = dict(charm=charm, series=series, **resources)
     overlays = [
-        ops_test.Bundle("kubernetes-core", channel="edge"),
+        ops_test.Bundle("kubernetes-core", channel="1.26/stable"),
         Path("tests/data/charm.yaml"),
     ]
     bundle, *overlays = await ops_test.async_render_bundles(*overlays, **context)
