@@ -73,6 +73,7 @@ from charms.layer.kubernetes_common import configure_kubelet
 from charms.layer.kubernetes_common import get_sandbox_image_uri
 from charms.layer.kubernetes_common import configure_default_cni
 from charms.layer.kubernetes_common import kubelet_kubeconfig_path
+from charms.layer.kubernetes_common import add_systemd_restart_always
 
 from charms.layer.kubernetes_node_base import LabelMaker
 
@@ -674,6 +675,9 @@ def start_worker():
 
     if kubernetes_common.is_ipv6(cluster_cidr):
         kubernetes_common.enable_ipv6_forwarding()
+
+    add_systemd_restart_always(worker_services)
+    check_call(["systemctl", "daemon-reload"])
 
     creds = db.get("credentials")
     data_changed("kube-control.creds", creds)
