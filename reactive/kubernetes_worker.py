@@ -74,6 +74,7 @@ from charms.layer.kubernetes_common import get_sandbox_image_uri
 from charms.layer.kubernetes_common import configure_default_cni
 from charms.layer.kubernetes_common import kubelet_kubeconfig_path
 from charms.layer.kubernetes_common import add_systemd_restart_always
+from charms.layer.kubernetes_common import cni_config_exists
 
 from charms.layer.kubernetes_node_base import LabelMaker
 
@@ -107,6 +108,8 @@ db = unitdata.kv()
 register_trigger(
     when="endpoint.azure.ready.changed", clear_flag="kubernetes-worker.cloud.ready"
 )
+# when CNI becomes available, reconfigure k8s services with the cluster-cidr
+register_trigger(when="cni.available", set_flag="kubernetes-worker.restart-needed")
 
 
 @hook("upgrade-charm")
@@ -158,7 +161,6 @@ def upgrade_charm():
         for flag in (
             "certificates.available",
             "kube-control.connected",
-            "cni.available",
             "kube-control.dns.available",
         )
     ):
@@ -420,10 +422,17 @@ def set_app_version():
 @hookenv.atexit
 def charm_status():
     """Update the status message with the current status of kubelet."""
+    try:
+        goal_state = hookenv.goal_state()
+    except NotImplementedError:
+        goal_state = {}
+
     container_runtime_connected = is_state("endpoint.container-runtime.joined")
     vsphere_joined = is_state("endpoint.vsphere.joined")
     azure_joined = is_state("endpoint.azure.joined")
     cloud_blocked = is_state("kubernetes-worker.cloud.blocked")
+    cni_available = is_state("cni.available")
+    cni_related = "cni" in goal_state.get("relations", {})
 
     if is_state("upgrade.series.in-progress"):
         hookenv.status_set("blocked", "Series upgrade in progress")
@@ -444,6 +453,9 @@ def charm_status():
         return
     if not is_flag_set("kubernetes.cni-plugins.installed"):
         hookenv.status_set("blocked", "Missing CNI resource")
+        return
+    if not cni_available and not cni_related and not cni_config_exists():
+        hookenv.status_set("blocked", "Missing CNI relation or config")
         return
     if is_state("kubernetes-worker.cloud.pending"):
         hookenv.status_set("waiting", "Waiting for cloud integration")
@@ -475,6 +487,9 @@ def charm_status():
         return
     if is_state("kubernetes-worker.snaps.upgrade-specified"):
         hookenv.status_set("waiting", "Upgrade pending")
+        return
+    if cni_related and not cni_available:
+        hookenv.status_set("waiting", "Waiting for CNI plugins to become available")
         return
     if is_state("kubernetes-worker.snaps.upgrade-needed"):
         hookenv.status_set("blocked", "Needs manual upgrade, run the upgrade action")
@@ -565,7 +580,6 @@ def update_kubelet_status():
 @when(
     "certificates.available",
     "kube-control.connected",
-    "cni.available",
     "kube-control.dns.available",
 )
 def send_data():
@@ -596,7 +610,6 @@ def send_data():
 
 @when(
     "kube-control.dns.available",
-    "cni.available",
     "endpoint.container-runtime.available",
 )
 @when_any("kube-control.api_endpoints.available", "kube-api-endpoint.available")
@@ -634,7 +647,6 @@ def watch_for_changes():
     "tls_client.certs.saved",
     "kube-control.dns.available",
     "kube-control.auth.available",
-    "cni.available",
     "kubernetes-worker.restart-needed",
     "worker.auth.bootstrapped",
     "endpoint.container-runtime.available",
@@ -665,15 +677,11 @@ def start_worker():
     registry = get_registry_location()
     cluster_cidr = kubernetes_common.cluster_cidr()
 
-    if cluster_cidr is None:
-        hookenv.log("Waiting for cluster cidr.")
-        return
-
     if not servers:
         hookenv.log("Waiting for API server URL")
         return
 
-    if kubernetes_common.is_ipv6(cluster_cidr):
+    if cluster_cidr and kubernetes_common.is_ipv6(cluster_cidr):
         kubernetes_common.enable_ipv6_forwarding()
 
     add_systemd_restart_always(worker_services)
