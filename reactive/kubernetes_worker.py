@@ -433,6 +433,7 @@ def charm_status():
     cloud_blocked = is_state("kubernetes-worker.cloud.blocked")
     cni_available = is_state("cni.available")
     cni_related = "cni" in goal_state.get("relations", {})
+    ignore_missing_cni = hookenv.config("ignore-missing-cni")
 
     if is_state("upgrade.series.in-progress"):
         hookenv.status_set("blocked", "Series upgrade in progress")
@@ -454,7 +455,12 @@ def charm_status():
     if not is_flag_set("kubernetes.cni-plugins.installed"):
         hookenv.status_set("blocked", "Missing CNI resource")
         return
-    if not cni_available and not cni_related and not cni_config_exists():
+    if (
+        not cni_available
+        and not cni_related
+        and not cni_config_exists()
+        and not ignore_missing_cni
+    ):
         hookenv.status_set("blocked", "Missing CNI relation or config")
         return
     if is_state("kubernetes-worker.cloud.pending"):
