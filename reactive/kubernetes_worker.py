@@ -666,7 +666,7 @@ def watch_for_changes():
 @when_any(
     "kube-control.api_endpoints.available",
     "kube-api-endpoint.available",
-    "endpoint.kube-control.has-xcp.changed",
+    "endpoint.kube-control.changed.has-xcp",
 )
 def start_worker():
     """Start kubelet using the provided API and DNS info."""
@@ -706,7 +706,7 @@ def start_worker():
     set_state("kubernetes-worker.label-config-required")
     set_state(NRPE_EXTERNAL_RECONFIG)
     remove_state("kubernetes-worker.restart-needed")
-    remove_state("endpoint.kube-control.has-xcp.changed")
+    remove_state("endpoint.kube-control.changed.has-xcp")
 
 
 @when("node.label-config-required", "kubernetes-worker.config.created")
