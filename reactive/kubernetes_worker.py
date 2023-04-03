@@ -110,6 +110,10 @@ register_trigger(
 )
 # when CNI becomes available, reconfigure k8s services with the cluster-cidr
 register_trigger(when="cni.available", set_flag="kubernetes-worker.restart-needed")
+register_trigger(
+    when="endpoint.kube-control.changed.has-xcp",
+    set_flag="kubernetes-worker.restart-needed",
+)
 
 
 @hook("upgrade-charm")
