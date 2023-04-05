@@ -110,6 +110,10 @@ register_trigger(
 )
 # when CNI becomes available, reconfigure k8s services with the cluster-cidr
 register_trigger(when="cni.available", set_flag="kubernetes-worker.restart-needed")
+register_trigger(
+    when="endpoint.kube-control.changed.has-xcp",
+    set_flag="kubernetes-worker.restart-needed",
+)
 
 
 @hook("upgrade-charm")
@@ -666,7 +670,7 @@ def watch_for_changes():
 @when_any(
     "kube-control.api_endpoints.available",
     "kube-api-endpoint.available",
-    "endpoint.kube-control.has-xcp.changed",
+    "endpoint.kube-control.changed.has-xcp",
 )
 def start_worker():
     """Start kubelet using the provided API and DNS info."""
@@ -706,7 +710,7 @@ def start_worker():
     set_state("kubernetes-worker.label-config-required")
     set_state(NRPE_EXTERNAL_RECONFIG)
     remove_state("kubernetes-worker.restart-needed")
-    remove_state("endpoint.kube-control.has-xcp.changed")
+    remove_state("endpoint.kube-control.changed.has-xcp")
 
 
 @when("node.label-config-required", "kubernetes-worker.config.created")
