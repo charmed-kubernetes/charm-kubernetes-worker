@@ -836,7 +836,7 @@ def render_and_launch_ingress():
         if registry_location:
             backend_registry = registry_location
         else:
-            backend_registry = "k8s.gcr.io"
+            backend_registry = "registry.k8s.io"
         if context["arch"] == "s390x":
             context["defaultbackend_image"] = "{}/defaultbackend-s390x:1.4".format(
                 backend_registry
@@ -883,8 +883,8 @@ def render_and_launch_ingress():
             context["ingress_uid"] = "101"
             context["ingress_image"] = "/".join(
                 [
-                    registry_location or "us.gcr.io",
-                    "k8s-artifacts-prod/ingress-nginx/controller:v1.2.0",
+                    registry_location or "registry.k8s.io",
+                    "ingress-nginx/controller:v1.6.4",
                 ]
             )
 
