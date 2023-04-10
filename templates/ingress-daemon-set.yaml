@@ -86,6 +86,14 @@ rules:
       - nodes
       - pods
       - secrets
+      - namespaces
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
     verbs:
       - list
       - watch
@@ -104,8 +112,7 @@ rules:
       - list
       - watch
   - apiGroups:
-      - extensions
-      - "networking.k8s.io" # # k8s 1.14+
+      - "networking.k8s.io" # k8s 1.14+
     resources:
       - ingresses
     verbs:
@@ -120,7 +127,6 @@ rules:
       - create
       - patch
   - apiGroups:
-      - extensions
       - "networking.k8s.io" # k8s 1.14+
     resources:
       - ingresses/status
@@ -134,6 +140,14 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - list
+      - watch
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
