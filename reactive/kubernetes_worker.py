@@ -114,6 +114,10 @@ register_trigger(
     when="endpoint.kube-control.changed.has-xcp",
     set_flag="kubernetes-worker.restart-needed",
 )
+register_trigger(
+    when="config.changed.proxy-extra-config",
+    set_flag="kubernetes-worker.restart-needed",
+)
 
 
 @hook("upgrade-charm")
