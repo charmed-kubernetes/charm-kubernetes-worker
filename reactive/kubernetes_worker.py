@@ -122,23 +122,9 @@ register_trigger(
 
 @hook("upgrade-charm")
 def upgrade_charm():
-    # migrate to new flags
-    if is_state("kubernetes-worker.restarted-for-cloud"):
-        remove_state("kubernetes-worker.restarted-for-cloud")
-        set_state("kubernetes-worker.cloud.ready")
-    if is_state("kubernetes-worker.cloud-request-sent"):
-        # minor change, just for consistency
-        remove_state("kubernetes-worker.cloud-request-sent")
-        set_state("kubernetes-worker.cloud.request-sent")
-    if is_state("kubernetes-worker.snaps.installed"):
-        # consistent with layer-kubernetes-node-base
-        remove_state("kubernetes-worker.snaps.installed")
-        set_state("kubernetes-node.snaps.installed")
-
     set_state("config.changed.install_from_upstream")
     hookenv.atexit(remove_state, "config.changed.install_from_upstream")
 
-    cleanup_pre_snap_services()
     migrate_resource_checksums(checksum_prefix, snap_resources)
     if check_resources_for_upgrade_needed(checksum_prefix, snap_resources):
         set_upgrade_needed()
@@ -198,10 +184,6 @@ def upgrade_charm():
         remove_state(NRPE_EXTERNAL_INIT)
 
     shutil.rmtree("/root/cdk/kubelet/dynamic-config", ignore_errors=True)
-
-    # kubernetes-worker.cni-plugins.installed flag is deprecated but we still
-    # want to clean it up
-    remove_state("kubernetes-worker.cni-plugins.installed")
 
     remove_state("kubernetes-worker.config.created")
     remove_state("kubernetes-worker.ingress.available")
@@ -281,37 +263,6 @@ def set_upgrade_needed():
     require_manual = config.get("require-manual-upgrade")
     if previous_channel is None or not require_manual:
         set_state("kubernetes-worker.snaps.upgrade-specified")
-
-
-def cleanup_pre_snap_services():
-    # remove old states
-    remove_state("kubernetes-worker.components.installed")
-
-    # disable old services
-    services = ["kubelet", "kube-proxy"]
-    for service in services:
-        hookenv.log("Stopping {0} service.".format(service))
-        service_stop(service)
-
-    # cleanup old files
-    files = [
-        "/lib/systemd/system/kubelet.service",
-        "/lib/systemd/system/kube-proxy.service",
-        "/etc/default/kube-default",
-        "/etc/default/kubelet",
-        "/etc/default/kube-proxy",
-        "/usr/local/bin/kubectl",
-        "/usr/local/bin/kubelet",
-        "/usr/local/bin/kube-proxy",
-        "/etc/kubernetes",
-    ]
-    for file in files:
-        if os.path.isdir(file):
-            hookenv.log("Removing directory: " + file)
-            shutil.rmtree(file)
-        elif os.path.isfile(file):
-            hookenv.log("Removing file: " + file)
-            os.remove(file)
 
 
 @when("config.changed.channel")
