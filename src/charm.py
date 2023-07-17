@@ -2,9 +2,11 @@
 # Copyright 2023 Canonical
 # See LICENSE file for licensing details.
 
-import logging
-import ops
+"""Charm."""
 
+import logging
+
+import ops
 from charms import kubernetes_snaps
 from charms.reconciler import Reconciler
 
@@ -12,14 +14,15 @@ log = logging.getLogger(__name__)
 
 
 class KubernetesWorkerCharm(ops.CharmBase):
+    """Charm."""
+
     def __init__(self, *args):
         super().__init__(*args)
         self.reconciler = Reconciler(self, self.reconcile)
 
     def reconcile(self, event):
-        kubernetes_snaps.install(
-            channel=self.model.config['channel']
-        )
+        """Reconcile state changing events."""
+        kubernetes_snaps.install(channel=self.model.config["channel"])
 
 
 if __name__ == "__main__":  # pragma: nocover
