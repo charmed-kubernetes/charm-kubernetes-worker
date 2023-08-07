@@ -11,7 +11,7 @@ options:
         juju run --application kubernetes-worker -- open-port 80 && open-port 443
   channel:
     type: string
-    default: "1.27/edge"
+    default: "1.28/edge"
     description: |
       Snap channel to install Kubernetes worker services from
   require-manual-upgrade:
