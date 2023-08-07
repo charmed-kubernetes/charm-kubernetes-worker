@@ -44,7 +44,7 @@ async def test_build_and_deploy(ops_test, series: str):
     log.info("Build Bundle...")
     context = dict(charm=charm, series=series, **resources)
     overlays = [
-        ops_test.Bundle("kubernetes-core", channel="edge"),
+        ops_test.Bundle("kubernetes-core", channel="1.28/stable"),
         Path("tests/data/charm.yaml"),
     ]
     bundle, *overlays = await ops_test.async_render_bundles(*overlays, **context)
