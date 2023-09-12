@@ -1,6 +1,6 @@
 name: juju-default-k8s-deployment-0
 config:
-  linux.kernel_modules: ip_tables,ip6_tables,netlink_diag,nf_nat,overlay
+  linux.kernel_modules: ip_tables,ip6_tables,netlink_diag,nf_nat,overlay,rbd,ip_vs,ip_vs_rr,ip_vs_wrr,ip_vs_sh
   raw.lxc: |
     lxc.apparmor.profile=unconfined
     lxc.mount.auto=proc:rw sys:rw
@@ -14,3 +14,7 @@ devices:
     path: /dev/kmsg
     source: /dev/kmsg
     type: unix-char
+  sysfsbpf:
+    path: /sys/fs/bpf
+    source: /sys/fs/bpf
+    type: disk
