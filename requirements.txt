@@ -1,4 +1,9 @@
 charm-lib-contextual-status @ git+https://github.com/charmed-kubernetes/charm-lib-contextual-status
-charm-lib-kubernetes-snaps @ git+https://github.com/charmed-kubernetes/charm-lib-kubernetes-snaps
+charm-lib-kubernetes-snaps @ git+https://github.com/charmed-kubernetes/charm-lib-kubernetes-snaps@69476eea079d95e0b1726b5595bf80985576ad23
 charm-lib-reconciler @ git+https://github.com/charmed-kubernetes/charm-lib-reconciler
 ops >= 2.2.0
+ops.interface_tls_certificates @ git+https://github.com/juju-solutions/interface-tls-certificates#subdirectory=ops
+charm-lib-interface-kubernetes-cni @ git+https://github.com/charmed-kubernetes/charm-lib-interface-kubernetes-cni
+git+https://github.com/charmed-kubernetes/interface-kube-control.git@6dd289d1c795fdeda1bed17873b8d6562227c829#subdirectory=ops
+charm-lib-interface-container-runtime @ git+https://github.com/charmed-kubernetes/charm-lib-interface-container-runtime
+pydantic==1.*
