@@ -3,12 +3,18 @@
 name: kubernetes-worker
 display-name: Kubernetes Worker
 summary: The workload bearing units of a Kubernetes cluster.
+maintainers:
+  - Kevin Monroe <kevin.monroe@canonical.com>  
+  - George Kraft <george.kraft@canonical.com>
+  - Mateo Florido <mateo.florido@canonical.com>
+  - Adam Dyess <adam.dyess@canonical.com>  
 description: |
   Kubernetes is an open-source platform for deploying, scaling, and operations
   of application containers across a cluster of hosts. Kubernetes is portable
   in that it works with public, private, and hybrid clouds. Extensible through
   a pluggable infrastructure. Self healing in that it will automatically
   restart and place containers on healthy nodes if a node ever goes away.
+docs: https://discourse.charmhub.io/t/kubernetes-worker-docs-index/6104
 series:
   - jammy
   - focal
