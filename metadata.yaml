@@ -4,10 +4,10 @@ name: kubernetes-worker
 display-name: Kubernetes Worker
 summary: The workload bearing units of a Kubernetes cluster.
 maintainers:
-  - Kevin Monroe <kevin.monroe@canonical.com>  
+  - Kevin Monroe <kevin.monroe@canonical.com>
   - George Kraft <george.kraft@canonical.com>
   - Mateo Florido <mateo.florido@canonical.com>
-  - Adam Dyess <adam.dyess@canonical.com>  
+  - Adam Dyess <adam.dyess@canonical.com>
 description: |
   Kubernetes is an open-source platform for deploying, scaling, and operations
   of application containers across a cluster of hosts. Kubernetes is portable
@@ -26,8 +26,12 @@ provides:
   container-runtime:
     interface: container-runtime
     scope: container
+  cos-agent:
+    interface: cos_agent
 requires:
   certificates:
     interface: tls-certificates
   kube-control:
     interface: kube-control
+  tokens:
+    interface: tokens

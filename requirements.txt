@@ -5,5 +5,6 @@ ops >= 2.2.0
 ops.interface_tls_certificates @ git+https://github.com/juju-solutions/interface-tls-certificates#subdirectory=ops
 charm-lib-interface-kubernetes-cni @ git+https://github.com/charmed-kubernetes/charm-lib-interface-kubernetes-cni
 git+https://github.com/charmed-kubernetes/interface-kube-control.git@6dd289d1c795fdeda1bed17873b8d6562227c829#subdirectory=ops
+git+https://github.com/charmed-kubernetes/charm-lib-interface-tokens.git@m/initial
 charm-lib-interface-container-runtime @ git+https://github.com/charmed-kubernetes/charm-lib-interface-container-runtime
 pydantic==1.*

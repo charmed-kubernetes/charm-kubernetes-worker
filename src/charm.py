@@ -5,6 +5,7 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
+from collections import namedtuple
 from pathlib import Path
 from socket import gethostname
 
@@ -12,8 +13,10 @@ import charms.contextual_status as status
 import ops
 import yaml
 from charms import kubernetes_snaps
+from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_kubernetes_cni import KubernetesCniProvides
+from charms.interface_tokens import TokensRequirer
 from charms.reconciler import BlockedStatus, Reconciler
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
@@ -26,6 +29,9 @@ UBUNTU_KUBECONFIG_PATH = Path("/home/ubuntu/.kube/config")
 KUBELET_KUBECONFIG_PATH = Path("/root/cdk/kubeconfig")
 KUBEPROXY_KUBECONFIG_PATH = Path("/root/cdk/kubeproxyconfig")
 
+OBSERVABILITY_USER = OBSERVABILITY_ROLE = "system:cos-monitoring-worker"
+JobConfig = namedtuple("JobConfig", ["name", "metrics_path", "scheme", "target"])
+
 
 class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
@@ -35,7 +41,14 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.certificates = CertificatesRequires(self, endpoint="certificates")
         self.cni = KubernetesCniProvides(self, endpoint="cni", default_cni="")
         self.container_runtime = ContainerRuntimeProvides(self, endpoint="container-runtime")
+        self.cos_agent = COSAgentProvider(
+            self,
+            relation_name="cos-agent",
+            scrape_configs=self._get_metrics_endpoints,
+            refresh_events=[self.on.tokens_relation_changed, self.on.upgrade_charm],
+        )
         self.kube_control = KubeControlRequirer(self)
+        self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
 
     def _check_kubecontrol_integration(self, event) -> bool:
@@ -165,6 +178,48 @@ class KubernetesWorkerCharm(ops.CharmBase):
             token=credentials.get("proxy_token"),
         )
 
+    def _get_metrics_endpoints(self) -> list:
+        """Return the metrics endpoints for K8s components."""
+        log.info("Building Prometheus scraping jobs.")
+        token = self.tokens.get_token(OBSERVABILITY_USER)
+
+        if not token:
+            log.info("Token not provided by the relation")
+            return []
+
+        def create_scrape_job(config: JobConfig):
+            return {
+                "tls_config": {"insecure_skip_verify": True},
+                "authorization": {"credentials": token},
+                "job_name": config.name,
+                "metrics_path": config.metrics_path,
+                "scheme": config.scheme,
+                "static_configs": [
+                    {
+                        "targets": [config.target],
+                        "labels": {"node": kubernetes_snaps.get_node_name()},
+                    }
+                ],
+                "relabel_configs": [
+                    {"target_label": "metrics_path", "replacement": config.metrics_path},
+                    {"target_label": "job", "replacement": config.name},
+                ],
+            }
+
+        kubernetes_jobs = [JobConfig("kube-proxy", "/metrics", "http", "localhost:10249")]
+        kubelet_metrics_paths = [
+            "/metrics",
+            "/metrics/resource",
+            "/metrics/cadvisor",
+            "/metrics/probes",
+        ]
+        kubelet_jobs = [
+            JobConfig(f"kubelet-{path.split('/')[-1]}", path, "https", "localhost:10250")
+            for path in kubelet_metrics_paths
+        ]
+
+        return [create_scrape_job(job) for job in kubernetes_jobs + kubelet_jobs]
+
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
 
@@ -175,6 +230,10 @@ class KubernetesWorkerCharm(ops.CharmBase):
         node_user = f"system:node:{kubernetes_snaps.get_node_name()}"
         self.kube_control.set_auth_request(node_user)
 
+    def _request_monitoring_token(self):
+        status.add(MaintenanceStatus("Requesting monitoring token"))
+        self.tokens.request_token(OBSERVABILITY_USER, OBSERVABILITY_ROLE)
+
     def reconcile(self, event):
         """Reconcile state changing events."""
         kubernetes_snaps.install(channel=self.model.config["channel"])
@@ -182,6 +241,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._request_certificates()
         self._write_certificates()
         self._request_kubelet_and_proxy_credentials()
+        self._request_monitoring_token()
         self._create_kubeconfigs(event)
         self._configure_cni()
         self._configure_container_runtime()
