@@ -60,7 +60,20 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 WaitingStatus(evaluation) if "Waiting" in evaluation else BlockedStatus(evaluation)
             )
             status.add(current_status)
-            log.info(f"kube-control integration status: {evaluation}")
+            return False
+        return True
+
+    def _check_tokens_integration(self, event) -> bool:
+        """Check the integration status with tokens."""
+        log.info("Checking tokens integration")
+        evaluation = self.tokens.evaluate_relation(event)
+        if evaluation:
+            current_status = (
+                WaitingStatus(evaluation)
+                if any(e in evaluation for e in ("Waiting", "Token request"))
+                else BlockedStatus(evaluation)
+            )
+            status.add(current_status)
             return False
         return True
 
@@ -232,8 +245,11 @@ class KubernetesWorkerCharm(ops.CharmBase):
         node_user = f"system:node:{kubernetes_snaps.get_node_name()}"
         self.kube_control.set_auth_request(node_user)
 
-    def _request_monitoring_token(self):
-        status.add(MaintenanceStatus("Requesting monitoring token"))
+    def _request_monitoring_token(self, event):
+        status.add(MaintenanceStatus("Requesting COS token"))
+        if not self._check_tokens_integration(event):
+            return
+
         cos_user = f"system:cos:{kubernetes_snaps.get_node_name()}"
         self.tokens.request_token(cos_user, OBSERVABILITY_GROUP)
 
@@ -244,7 +260,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._request_certificates()
         self._write_certificates()
         self._request_kubelet_and_proxy_credentials()
-        self._request_monitoring_token()
+        self._request_monitoring_token(event)
         self._create_kubeconfigs(event)
         self._configure_cni()
         self._configure_container_runtime()
