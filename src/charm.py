@@ -29,7 +29,7 @@ UBUNTU_KUBECONFIG_PATH = Path("/home/ubuntu/.kube/config")
 KUBELET_KUBECONFIG_PATH = Path("/root/cdk/kubeconfig")
 KUBEPROXY_KUBECONFIG_PATH = Path("/root/cdk/kubeproxyconfig")
 
-OBSERVABILITY_USER = OBSERVABILITY_ROLE = "system:cos-monitoring-worker"
+OBSERVABILITY_GROUP = "system:cos"
 JobConfig = namedtuple("JobConfig", ["name", "metrics_path", "scheme", "target"])
 
 
@@ -181,7 +181,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def _get_metrics_endpoints(self) -> list:
         """Return the metrics endpoints for K8s components."""
         log.info("Building Prometheus scraping jobs.")
-        token = self.tokens.get_token(OBSERVABILITY_USER)
+
+        cos_user = f"system:cos:{kubernetes_snaps.get_node_name()}"
+        token = self.tokens.get_token(cos_user)
 
         if not token:
             log.info("Token not provided by the relation")
@@ -232,7 +234,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _request_monitoring_token(self):
         status.add(MaintenanceStatus("Requesting monitoring token"))
-        self.tokens.request_token(OBSERVABILITY_USER, OBSERVABILITY_ROLE)
+        cos_user = f"system:cos:{kubernetes_snaps.get_node_name()}"
+        self.tokens.request_token(cos_user, OBSERVABILITY_GROUP)
 
     def reconcile(self, event):
         """Reconcile state changing events."""
