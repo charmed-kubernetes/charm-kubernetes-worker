@@ -67,15 +67,11 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """Check the integration status with tokens."""
         log.info("Checking tokens integration")
         evaluation = self.tokens.evaluate_relation(event)
-        if evaluation:
-            current_status = (
-                WaitingStatus(evaluation)
-                if any(e in evaluation for e in ("Waiting", "Token request"))
-                else BlockedStatus(evaluation)
-            )
-            status.add(current_status)
-            return False
-        return True
+        if not evaluation:
+            return True
+        if any(e in evaluation for e in ("Waiting", "Token request")):
+            status.add(WaitingStatus(evaluation))
+        return False
 
     def _configure_cni(self):
         """Configure the CNI integration databag."""
