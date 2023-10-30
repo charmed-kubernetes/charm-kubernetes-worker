@@ -15,6 +15,7 @@ import yaml
 from charms import kubernetes_snaps
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.interface_container_runtime import ContainerRuntimeProvides
+from charms.interface_external_cloud_provider import ExternalCloudProvider
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.reconciler import BlockedStatus, Reconciler
@@ -47,6 +48,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             scrape_configs=self._get_metrics_endpoints,
             refresh_events=[self.on.tokens_relation_changed, self.on.upgrade_charm],
         )
+        self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.kube_control = KubeControlRequirer(self)
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
@@ -112,7 +114,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             dns_ip=dns.get("sdn-ip"),
             extra_args_config=self.model.config.get("kubelet-extra-args"),
             extra_config=yaml.safe_load(self.model.config.get("kubelet-extra-config")),
-            has_xcp=self.kube_control.has_xcp,
+            external_cloud_provider=self.external_cloud_provider,
             kubeconfig=str(KUBELET_KUBECONFIG_PATH),
             node_ip=self.model.get_binding("kube-control").network.ingress_address.exploded,
             registry=self.kube_control.get_registry_location(),
@@ -129,6 +131,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             extra_args_config=self.model.config.get("proxy-extra-args"),
             extra_config=yaml.safe_load(self.model.config.get("proxy-extra-config")),
             kubeconfig=str(KUBEPROXY_KUBECONFIG_PATH),
+            external_cloud_provider=self.external_cloud_provider,
         )
 
     def _create_kubeconfigs(self, event):
@@ -142,7 +145,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         if not self._check_kubecontrol_integration(event):
             return
 
-        node_user = f"system:node:{kubernetes_snaps.get_node_name()}"
+        fqdn = self.external_cloud_provider.name == "aws"
+        node_user = f"system:node:{kubernetes_snaps.get_node_name(fqdn)}"
         credentials = self.kube_control.get_auth_credentials(node_user)
         if not credentials:
             status.add(WaitingStatus("Waiting for kube-control credentials"))
@@ -238,7 +242,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """Request authorization for kubelet and kube-proxy."""
         status.add(MaintenanceStatus("Requesting kubelet and kube-proxy credentials"))
 
-        node_user = f"system:node:{kubernetes_snaps.get_node_name()}"
+        fqdn = self.external_cloud_provider.name == "aws"
+        node_user = f"system:node:{kubernetes_snaps.get_node_name(fqdn)}"
         self.kube_control.set_auth_request(node_user)
 
     def _request_monitoring_token(self, event):

@@ -1,8 +1,9 @@
 charm-lib-contextual-status @ git+https://github.com/charmed-kubernetes/charm-lib-contextual-status
 charm-lib-interface-container-runtime @ git+https://github.com/charmed-kubernetes/charm-lib-interface-container-runtime
+charm-lib-interface-external-cloud-provider @ git+https://github.com/charmed-kubernetes/charm-lib-interface-external-cloud-provider
 charm-lib-interface-kubernetes-cni @ git+https://github.com/charmed-kubernetes/charm-lib-interface-kubernetes-cni
 charm-lib-interface-tokens @ git+https://github.com/charmed-kubernetes/charm-lib-interface-tokens
-charm-lib-kubernetes-snaps @ git+https://github.com/charmed-kubernetes/charm-lib-kubernetes-snaps@69476eea079d95e0b1726b5595bf80985576ad23
+charm-lib-kubernetes-snaps @ git+https://github.com/charmed-kubernetes/charm-lib-kubernetes-snaps
 charm-lib-reconciler @ git+https://github.com/charmed-kubernetes/charm-lib-reconciler
 cosl == 0.0.7
 ops >= 2.2.0
