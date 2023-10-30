@@ -5,6 +5,7 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from socket import gethostname
 
@@ -12,9 +13,11 @@ import charms.contextual_status as status
 import ops
 import yaml
 from charms import kubernetes_snaps
+from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_external_cloud_provider import ExternalCloudProvider
 from charms.interface_kubernetes_cni import KubernetesCniProvides
+from charms.interface_tokens import TokensRequirer
 from charms.reconciler import BlockedStatus, Reconciler
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
@@ -27,6 +30,28 @@ UBUNTU_KUBECONFIG_PATH = Path("/home/ubuntu/.kube/config")
 KUBELET_KUBECONFIG_PATH = Path("/root/cdk/kubeconfig")
 KUBEPROXY_KUBECONFIG_PATH = Path("/root/cdk/kubeproxyconfig")
 
+OBSERVABILITY_GROUP = "system:cos"
+
+
+@dataclass
+class JobConfig:
+    """Data class representing the configuration for a Prometheus scrape job.
+
+    Attributes:
+        name (str): The name of the scrape job. Corresponds to the name of the Kubernetes
+                    component being monitored (e.g., 'kube-apiserver').
+        metrics_path (str): The endpoint path where the metrics are exposed by the
+                            component (e.g., '/metrics').
+        scheme (str): The scheme used for the endpoint. (e.g.'http' or 'https').
+        target (str): The network address of the target component along with the port.
+                      Format is 'hostname:port' (e.g., 'localhost:6443').
+    """
+
+    name: str
+    metrics_path: str
+    scheme: str
+    target: str
+
 
 class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
@@ -36,8 +61,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.certificates = CertificatesRequires(self, endpoint="certificates")
         self.cni = KubernetesCniProvides(self, endpoint="cni", default_cni="")
         self.container_runtime = ContainerRuntimeProvides(self, endpoint="container-runtime")
-        self.kube_control = KubeControlRequirer(self)
+        self.cos_agent = COSAgentProvider(
+            self,
+            relation_name="cos-agent",
+            scrape_configs=self._get_metrics_endpoints,
+            refresh_events=[self.on.tokens_relation_changed, self.on.upgrade_charm],
+        )
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
+        self.kube_control = KubeControlRequirer(self)
+        self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
 
     def _check_kubecontrol_integration(self, event) -> bool:
@@ -49,9 +81,18 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 WaitingStatus(evaluation) if "Waiting" in evaluation else BlockedStatus(evaluation)
             )
             status.add(current_status)
-            log.info(f"kube-control integration status: {evaluation}")
             return False
         return True
+
+    def _check_tokens_integration(self, event) -> bool:
+        """Check the integration status with tokens."""
+        log.info("Checking tokens integration")
+        evaluation = self.tokens.evaluate_relation(event)
+        if not evaluation:
+            return True
+        if any(e in evaluation for e in ("Waiting", "Token request")):
+            status.add(WaitingStatus(evaluation))
+        return False
 
     def _configure_cni(self):
         """Configure the CNI integration databag."""
@@ -123,8 +164,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         if not self._check_kubecontrol_integration(event):
             return
 
-        fqdn = self.external_cloud_provider.name == "aws"
-        node_user = f"system:node:{kubernetes_snaps.get_node_name(fqdn)}"
+        node_user = f"system:node:{self._get_node_name()}"
         credentials = self.kube_control.get_auth_credentials(node_user)
         if not credentials:
             status.add(WaitingStatus("Waiting for kube-control credentials"))
@@ -169,16 +209,71 @@ class KubernetesWorkerCharm(ops.CharmBase):
             token=credentials.get("proxy_token"),
         )
 
+    def _get_metrics_endpoints(self) -> list:
+        """Return the metrics endpoints for K8s components."""
+        log.info("Building Prometheus scraping jobs.")
+
+        cos_user = f"system:cos:{self._get_node_name()}"
+        token = self.tokens.get_token(cos_user)
+
+        if not token:
+            log.info("Token not provided by the relation")
+            return []
+
+        def create_scrape_job(config: JobConfig):
+            return {
+                "tls_config": {"insecure_skip_verify": True},
+                "authorization": {"credentials": token},
+                "job_name": config.name,
+                "metrics_path": config.metrics_path,
+                "scheme": config.scheme,
+                "static_configs": [
+                    {
+                        "targets": [config.target],
+                        "labels": {"node": kubernetes_snaps.get_node_name()},
+                    }
+                ],
+                "relabel_configs": [
+                    {"target_label": "metrics_path", "replacement": config.metrics_path},
+                    {"target_label": "job", "replacement": config.name},
+                ],
+            }
+
+        kubernetes_jobs = [JobConfig("kube-proxy", "/metrics", "http", "localhost:10249")]
+        kubelet_metrics_paths = [
+            "/metrics",
+            "/metrics/resource",
+            "/metrics/cadvisor",
+            "/metrics/probes",
+        ]
+        kubelet_jobs = [
+            JobConfig(f"kubelet-{path.split('/')[-1]}", path, "https", "localhost:10250")
+            for path in kubelet_metrics_paths
+        ]
+
+        return [create_scrape_job(job) for job in kubernetes_jobs + kubelet_jobs]
+
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
+
+    def _get_node_name(self) -> str:
+        fqdn = self.external_cloud_provider.name == "aws"
+        return kubernetes_snaps.get_node_name(fqdn)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
         status.add(MaintenanceStatus("Requesting kubelet and kube-proxy credentials"))
 
-        fqdn = self.external_cloud_provider.name == "aws"
-        node_user = f"system:node:{kubernetes_snaps.get_node_name(fqdn)}"
+        node_user = f"system:node:{self._get_node_name()}"
         self.kube_control.set_auth_request(node_user)
+
+    def _request_monitoring_token(self, event):
+        status.add(MaintenanceStatus("Requesting COS token"))
+        if not self._check_tokens_integration(event):
+            return
+
+        cos_user = f"system:cos:{self._get_node_name()}"
+        self.tokens.request_token(cos_user, OBSERVABILITY_GROUP)
 
     def reconcile(self, event):
         """Reconcile state changing events."""
@@ -187,6 +282,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._request_certificates()
         self._write_certificates()
         self._request_kubelet_and_proxy_credentials()
+        self._request_monitoring_token(event)
         self._create_kubeconfigs(event)
         self._configure_cni()
         self._configure_container_runtime()
