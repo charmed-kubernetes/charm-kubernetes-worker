@@ -156,7 +156,7 @@ def test__configure_kubelet(charm_environment: CharmEnvironment):
                 dns_ip="10.0.0.10",
                 extra_args_config="",
                 extra_config={},
-                has_xcp=False,
+                external_cloud_provider=charm.external_cloud_provider,
                 kubeconfig="/root/cdk/kubeconfig",
                 node_ip="10.0.0.10",
                 registry="myregistry.com",
@@ -178,6 +178,7 @@ def test__configure_kubeproxy(charm_environment: CharmEnvironment):
             extra_args_config="",
             extra_config={},
             kubeconfig="/root/cdk/kubeproxyconfig",
+            external_cloud_provider=charm.external_cloud_provider,
         )
 
 
