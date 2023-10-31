@@ -35,3 +35,8 @@ requires:
     interface: kube-control
   tokens:
     interface: tokens
+resources:
+  cni-plugins:
+    type: file
+    filename: cni-plugins.tar.gz
+    description: CNI network plugins for Kubernetes

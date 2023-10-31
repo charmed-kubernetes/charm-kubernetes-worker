@@ -1,5 +1,0 @@
-description: A minimal two-machine Kubernetes cluster, appropriate for development.
-applications:
-  kubernetes-worker:
-    charm: {{charm}}
-    channel: null
