@@ -5,9 +5,12 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
+import shlex
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from socket import gethostname
+from subprocess import CalledProcessError
 
 import charms.contextual_status as status
 import ops
@@ -21,7 +24,7 @@ from charms.interface_tokens import TokensRequirer
 from charms.reconciler import BlockedStatus, Reconciler
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
-from ops.model import MaintenanceStatus, WaitingStatus
+from ops.model import MaintenanceStatus, ModelError, WaitingStatus
 
 log = logging.getLogger(__name__)
 
@@ -260,6 +263,32 @@ class KubernetesWorkerCharm(ops.CharmBase):
         fqdn = self.external_cloud_provider.name == "aws"
         return kubernetes_snaps.get_node_name(fqdn)
 
+    def _install_cni_binaries(self):
+        try:
+            resource_path = self.model.resources.fetch("cni-plugins")
+        except ModelError:
+            message = "Something went wrong when claiming 'cni-plugins' resource."
+            status.add(BlockedStatus(message))
+            log.exception(message)
+            return
+
+        except NameError:
+            message = "Resource 'cni-plugins' not found."
+            status.add(message)
+            log.exception(message)
+            return
+
+        unpack_path = Path("/opt/cni/bin")
+        unpack_path.mkdir(parents=True, exist_ok=True)
+
+        command = f"tar -xzvf {resource_path} -C {unpack_path} --no-same-owner"
+        try:
+            subprocess.check_call(shlex.split(command))
+        except CalledProcessError:
+            log.exception("Failed to extract 'cni-plugins:'")
+
+        log.info(f"Extracted 'cni-plugins' to {unpack_path}")
+
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
         status.add(MaintenanceStatus("Requesting kubelet and kube-proxy credentials"))
@@ -277,6 +306,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def reconcile(self, event):
         """Reconcile state changing events."""
+        self._install_cni_binaries()
         kubernetes_snaps.install(channel=self.model.config["channel"])
         kubernetes_snaps.configure_services_restart_always()
         self._request_certificates()
