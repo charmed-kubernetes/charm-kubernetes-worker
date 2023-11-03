@@ -295,25 +295,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """Handle the upgrade action."""
         with status.context(self.unit):
             channel = self.model.config.get("channel")
-            log.info(f"Starting the upgrade of Kubernetes snaps to '{channel}' channel.")
-
-            try:
-                kubernetes_snaps.install(channel=channel, control_plane=True, upgrade=True)
-            except (CalledProcessError, Exception) as e:
-                if isinstance(e, CalledProcessError):
-                    error_message = f"Upgrade failed with a process error. stdout: {e.stdout}, stderr: {e.stderr}"
-                else:
-                    error_message = f"An unexpected error occurred during the upgrade: {e}"
-
-                log.exception(error_message)
-                status.add("Snap upgrade failed. Check action results for more information.")
-                event.fail(error_message)
-            else:
-                result_message = (
-                    f"Successfully upgraded Kubernetes snaps to the '{channel}' channel."
-                )
-                log.info(result_message)
-                event.set_results({"result": result_message})
+            kubernetes_snaps.upgrade_snaps(channel=channel, event=event)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
