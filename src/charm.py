@@ -259,7 +259,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         ]
         kubelet_jobs = [
             JobConfig(
-                f"kubelet-{path.split('/')[-1]}" if len(path.split("/")) > 2 else "kubelet",
+                f"kubelet-{metric}" if metric else "kubelet",
                 path,
                 "https",
                 "localhost:10250",
@@ -269,6 +269,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 ],
             )
             for path in kubelet_metrics_paths
+            if (metric := path.strip("/metrics")) is not None
         ]
 
         return [create_scrape_job(job) for job in kubernetes_jobs + kubelet_jobs]
