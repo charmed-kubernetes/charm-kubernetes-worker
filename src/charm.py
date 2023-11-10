@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from socket import gethostname
 from subprocess import CalledProcessError
+from typing import Dict, List
 
 import charms.contextual_status as status
 import ops
@@ -48,12 +49,14 @@ class JobConfig:
         scheme (str): The scheme used for the endpoint. (e.g.'http' or 'https').
         target (str): The network address of the target component along with the port.
                       Format is 'hostname:port' (e.g., 'localhost:6443').
+        relabel_configs (List[Dict[str, str]]): Additional configurations for relabeling.
     """
 
     name: str
     metrics_path: str
     scheme: str
     target: str
+    relabel_configs: List[Dict[str, str]]
 
 
 class KubernetesWorkerCharm(ops.CharmBase):
@@ -236,13 +239,18 @@ class KubernetesWorkerCharm(ops.CharmBase):
                         "labels": {"node": kubernetes_snaps.get_node_name()},
                     }
                 ],
-                "relabel_configs": [
-                    {"target_label": "metrics_path", "replacement": config.metrics_path},
-                    {"target_label": "job", "replacement": config.name},
-                ],
+                "relabel_configs": config.relabel_configs,
             }
 
-        kubernetes_jobs = [JobConfig("kube-proxy", "/metrics", "http", "localhost:10249")]
+        kubernetes_jobs = [
+            JobConfig(
+                "kube-proxy",
+                "/metrics",
+                "http",
+                "localhost:10249",
+                [{"target_label": "job", "replacement": "kube-proxy"}],
+            ),
+        ]
         kubelet_metrics_paths = [
             "/metrics",
             "/metrics/resource",
@@ -250,7 +258,16 @@ class KubernetesWorkerCharm(ops.CharmBase):
             "/metrics/probes",
         ]
         kubelet_jobs = [
-            JobConfig(f"kubelet-{path.split('/')[-1]}", path, "https", "localhost:10250")
+            JobConfig(
+                f"kubelet-{path.split('/')[-1]}" if len(path.split("/")) > 2 else "kubelet",
+                path,
+                "https",
+                "localhost:10250",
+                [
+                    {"target_label": "metrics_path", "replacement": path},
+                    {"target_label": "job", "replacement": "kubelet"},
+                ],
+            )
             for path in kubelet_metrics_paths
         ]
 
