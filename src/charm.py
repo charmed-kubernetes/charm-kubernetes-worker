@@ -236,7 +236,10 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 "static_configs": [
                     {
                         "targets": [config.target],
-                        "labels": {"node": kubernetes_snaps.get_node_name()},
+                        "labels": {
+                            "node": kubernetes_snaps.get_node_name(),
+                            "cluster": self.model.name,
+                        },
                     }
                 ],
                 "relabel_configs": config.relabel_configs,
