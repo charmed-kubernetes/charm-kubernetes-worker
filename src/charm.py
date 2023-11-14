@@ -71,7 +71,11 @@ class KubernetesWorkerCharm(ops.CharmBase):
             self,
             relation_name="cos-agent",
             scrape_configs=self._get_metrics_endpoints,
-            refresh_events=[self.on.tokens_relation_changed, self.on.upgrade_charm],
+            refresh_events=[
+                self.on.kube_control_relation_changed,
+                self.on.tokens_relation_changed,
+                self.on.upgrade_charm,
+            ],
         )
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.kube_control = KubeControlRequirer(self)
@@ -238,7 +242,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
                         "targets": [config.target],
                         "labels": {
                             "node": kubernetes_snaps.get_node_name(),
-                            "cluster": self.model.name,
+                            "cluster": self.kube_control.get_cluster_tag(),
                         },
                     }
                 ],
