@@ -82,6 +82,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
 
+        self.framework.observe(self.on.upgrade_action, self._on_upgrade_action)
+
     def _check_kubecontrol_integration(self, event) -> bool:
         """Check the integration status with kube-control."""
         log.info("Checking kube-control integration")
@@ -313,6 +315,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
             log.exception("Failed to extract 'cni-plugins:'")
 
         log.info(f"Extracted 'cni-plugins' to {unpack_path}")
+
+    def _on_upgrade_action(self, event):
+        """Handle the upgrade action."""
+        with status.context(self.unit):
+            channel = self.model.config.get("channel")
+            kubernetes_snaps.upgrade_snaps(channel=channel, event=event)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
