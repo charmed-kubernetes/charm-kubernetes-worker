@@ -6,7 +6,9 @@ charm-lib-interface-tokens @ git+https://github.com/charmed-kubernetes/charm-lib
 charm-lib-kubernetes-snaps @ git+https://github.com/charmed-kubernetes/charm-lib-kubernetes-snaps
 charm-lib-reconciler @ git+https://github.com/charmed-kubernetes/charm-lib-reconciler
 cosl == 0.0.7
+jinja2
 ops >= 2.2.0
 ops.interface_kube_control @ git+https://github.com/juju-solutions/interface-kube-control#subdirectory=ops
 ops.interface_tls_certificates @ git+https://github.com/juju-solutions/interface-tls-certificates#subdirectory=ops
 pydantic==1.*
+tenacity

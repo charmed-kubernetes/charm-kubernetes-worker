@@ -5,8 +5,10 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
+import os
 import shlex
 import subprocess
+from base64 import b64encode
 from dataclasses import dataclass
 from pathlib import Path
 from socket import gethostname
@@ -23,6 +25,8 @@ from charms.interface_external_cloud_provider import ExternalCloudProvider
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.reconciler import BlockedStatus, Reconciler
+from jinja2 import Environment, FileSystemLoader
+from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
 from ops.model import MaintenanceStatus, ModelError, WaitingStatus
@@ -164,6 +168,67 @@ class KubernetesWorkerCharm(ops.CharmBase):
             kubeconfig=str(KUBEPROXY_KUBECONFIG_PATH),
             external_cloud_provider=self.external_cloud_provider,
         )
+
+    def _configure_nginx_ingress_controller(self):
+        """Configure nginx-ingress-controller."""
+        if not os.path.exists("/root/.kube/config"):
+            log.info("Waiting for kubeconfig before configuring ingress")
+            return
+
+        status.add(MaintenanceStatus("Configuring ingress"))
+
+        manifest_dir = "/root/cdk/addons"
+        manifest_path = manifest_dir + "/ingress-daemon-set.yaml"
+
+        if self.config["ingress"]:
+            image = self.config["nginx-image"]
+            if image == "" or image == "auto":
+                registry = self.kube_control.get_registry_location() or "registry.k8s.io"
+                image = f"{registry}/ingress-nginx/controller:v1.6.4"
+
+            context = {
+                "daemonset_api_version": "apps/v1",
+                "default_ssl_certificate_option": None,
+                "enable_ssl_passthrough": self.config["ingress-ssl-passthrough"],
+                "ingress_image": image,
+                "ingress_uid": "101",
+                "juju_application": self.app.name,
+                "ssl_chain_completion": self.config["ingress-ssl-chain-completion"],
+                "use_forwarded_headers": "true"
+                if self.config["ingress-use-forwarded-headers"]
+                else "false",
+            }
+
+            ssl_cert = self.config["ingress-default-ssl-certificate"]
+            ssl_key = self.config["ingress-default-ssl-key"]
+            if ssl_cert and ssl_key:
+                context.update(
+                    {
+                        "default_ssl_certificate": b64encode(ssl_cert.encode("utf-8")).decode(
+                            "utf-8"
+                        ),
+                        "default_ssl_certificate_option": "- --default-ssl-certificate=$(POD_NAMESPACE)/default-ssl-certificate",
+                        "default_ssl_key": b64encode(ssl_key.encode("utf-8")).decode("utf-8"),
+                    }
+                )
+
+            env = Environment(loader=FileSystemLoader("templates"))
+            template = env.get_template("ingress-daemon-set.yaml")
+            output = template.render(context)
+            os.makedirs(manifest_dir, exist_ok=True)
+            with open(manifest_path, "w") as f:
+                f.write(output)
+            kubectl("apply", "-f", manifest_path)
+
+            self.unit.open_port("tcp", 80)
+            self.unit.open_port("tcp", 443)
+        else:
+            self.unit.close_port("tcp", 80)
+            self.unit.close_port("tcp", 443)
+
+            if os.path.exists(manifest_path):
+                kubectl("delete", "--ignore-not-found", "-f", manifest_path)
+                os.remove(manifest_path)
 
     def _create_kubeconfigs(self, event):
         """Generate kubeconfig files for the cluster components."""
@@ -352,6 +417,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kernel_parameters()
         self._configure_kubelet(event)
         self._configure_kubeproxy(event)
+        self._configure_nginx_ingress_controller()
 
     def _request_certificates(self):
         """Request client and server certificates."""
