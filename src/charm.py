@@ -24,6 +24,7 @@ from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_external_cloud_provider import ExternalCloudProvider
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
+from charms.node_base import LabelMaker
 from charms.reconciler import BlockedStatus, Reconciler
 from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
@@ -83,6 +84,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         )
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.kube_control = KubeControlRequirer(self)
+        self.label_maker = LabelMaker(self, kubeconfig_path="/root/.kube/config")
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
 
@@ -169,6 +171,17 @@ class KubernetesWorkerCharm(ops.CharmBase):
             external_cloud_provider=self.external_cloud_provider,
         )
 
+    def _configure_labels(self):
+        """Configure labels."""
+        if not os.path.exists("/root/.kube/config"):
+            log.info("Waiting for kubeconfig before configuring labels")
+            return
+
+        status.add(MaintenanceStatus("Configuring node labels"))
+
+        if self.label_maker.active_labels() is not None:
+            self.label_maker.apply_node_labels()
+
     def _configure_nginx_ingress_controller(self):
         """Configure nginx-ingress-controller."""
         if not os.path.exists("/root/.kube/config"):
@@ -241,7 +254,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         if not self._check_kubecontrol_integration(event):
             return
 
-        node_user = f"system:node:{self._get_node_name()}"
+        node_user = f"system:node:{self.get_node_name()}"
         credentials = self.kube_control.get_auth_credentials(node_user)
         if not credentials:
             status.add(WaitingStatus("Waiting for kube-control credentials"))
@@ -286,11 +299,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
             token=credentials.get("proxy_token"),
         )
 
+    def get_cloud_name(self) -> str:
+        """Return cloud name."""
+        return self.external_cloud_provider.name
+
     def _get_metrics_endpoints(self) -> list:
         """Return the metrics endpoints for K8s components."""
         log.info("Building Prometheus scraping jobs.")
 
-        cos_user = f"system:cos:{self._get_node_name()}"
+        cos_user = f"system:cos:{self.get_node_name()}"
         token = self.tokens.get_token(cos_user)
 
         if not token:
@@ -351,8 +368,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
 
-    def _get_node_name(self) -> str:
-        fqdn = self.external_cloud_provider.name == "aws"
+    def get_node_name(self) -> str:
+        """Return node name."""
+        fqdn = self.get_cloud_name() == "aws"
         return kubernetes_snaps.get_node_name(fqdn)
 
     def _install_cni_binaries(self):
@@ -391,7 +409,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """Request authorization for kubelet and kube-proxy."""
         status.add(MaintenanceStatus("Requesting kubelet and kube-proxy credentials"))
 
-        node_user = f"system:node:{self._get_node_name()}"
+        node_user = f"system:node:{self.get_node_name()}"
         self.kube_control.set_auth_request(node_user)
 
     def _request_monitoring_token(self, event):
@@ -399,7 +417,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         if not self._check_tokens_integration(event):
             return
 
-        cos_user = f"system:cos:{self._get_node_name()}"
+        cos_user = f"system:cos:{self.get_node_name()}"
         self.tokens.request_token(cos_user, OBSERVABILITY_GROUP)
 
     def reconcile(self, event):
@@ -418,6 +436,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kubelet(event)
         self._configure_kubeproxy(event)
         self._configure_nginx_ingress_controller()
+        self._configure_labels()
 
     def _request_certificates(self):
         """Request client and server certificates."""
