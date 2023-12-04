@@ -5,8 +5,10 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
+import os
 import shlex
 import subprocess
+from base64 import b64encode
 from dataclasses import dataclass
 from pathlib import Path
 from socket import gethostname
@@ -22,7 +24,10 @@ from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_external_cloud_provider import ExternalCloudProvider
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
+from charms.node_base import LabelMaker
 from charms.reconciler import BlockedStatus, Reconciler
+from jinja2 import Environment, FileSystemLoader
+from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
 from ops.model import MaintenanceStatus, ModelError, WaitingStatus
@@ -79,6 +84,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         )
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.kube_control = KubeControlRequirer(self)
+        self.label_maker = LabelMaker(self, kubeconfig_path="/root/.kube/config")
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
 
@@ -165,6 +171,78 @@ class KubernetesWorkerCharm(ops.CharmBase):
             external_cloud_provider=self.external_cloud_provider,
         )
 
+    def _configure_labels(self):
+        """Configure labels."""
+        if not os.path.exists("/root/.kube/config"):
+            log.info("Waiting for kubeconfig before configuring labels")
+            return
+
+        status.add(MaintenanceStatus("Configuring node labels"))
+
+        if self.label_maker.active_labels() is not None:
+            self.label_maker.apply_node_labels()
+
+    def _configure_nginx_ingress_controller(self):
+        """Configure nginx-ingress-controller."""
+        if not os.path.exists("/root/.kube/config"):
+            log.info("Waiting for kubeconfig before configuring ingress")
+            return
+
+        status.add(MaintenanceStatus("Configuring ingress"))
+
+        manifest_dir = "/root/cdk/addons"
+        manifest_path = manifest_dir + "/ingress-daemon-set.yaml"
+
+        if self.config["ingress"]:
+            image = self.config["nginx-image"]
+            if image == "" or image == "auto":
+                registry = self.kube_control.get_registry_location() or "registry.k8s.io"
+                image = f"{registry}/ingress-nginx/controller:v1.6.4"
+
+            context = {
+                "daemonset_api_version": "apps/v1",
+                "default_ssl_certificate_option": None,
+                "enable_ssl_passthrough": self.config["ingress-ssl-passthrough"],
+                "ingress_image": image,
+                "ingress_uid": "101",
+                "juju_application": self.app.name,
+                "ssl_chain_completion": self.config["ingress-ssl-chain-completion"],
+                "use_forwarded_headers": "true"
+                if self.config["ingress-use-forwarded-headers"]
+                else "false",
+            }
+
+            ssl_cert = self.config["ingress-default-ssl-certificate"]
+            ssl_key = self.config["ingress-default-ssl-key"]
+            if ssl_cert and ssl_key:
+                context.update(
+                    {
+                        "default_ssl_certificate": b64encode(ssl_cert.encode("utf-8")).decode(
+                            "utf-8"
+                        ),
+                        "default_ssl_certificate_option": "- --default-ssl-certificate=$(POD_NAMESPACE)/default-ssl-certificate",
+                        "default_ssl_key": b64encode(ssl_key.encode("utf-8")).decode("utf-8"),
+                    }
+                )
+
+            env = Environment(loader=FileSystemLoader("templates"))
+            template = env.get_template("ingress-daemon-set.yaml")
+            output = template.render(context)
+            os.makedirs(manifest_dir, exist_ok=True)
+            with open(manifest_path, "w") as f:
+                f.write(output)
+            kubectl("apply", "-f", manifest_path)
+
+            self.unit.open_port("tcp", 80)
+            self.unit.open_port("tcp", 443)
+        else:
+            self.unit.close_port("tcp", 80)
+            self.unit.close_port("tcp", 443)
+
+            if os.path.exists(manifest_path):
+                kubectl("delete", "--ignore-not-found", "-f", manifest_path)
+                os.remove(manifest_path)
+
     def _create_kubeconfigs(self, event):
         """Generate kubeconfig files for the cluster components."""
         status.add(MaintenanceStatus("Generating Kubeconfig"))
@@ -176,7 +254,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         if not self._check_kubecontrol_integration(event):
             return
 
-        node_user = f"system:node:{self._get_node_name()}"
+        node_user = f"system:node:{self.get_node_name()}"
         credentials = self.kube_control.get_auth_credentials(node_user)
         if not credentials:
             status.add(WaitingStatus("Waiting for kube-control credentials"))
@@ -221,11 +299,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
             token=credentials.get("proxy_token"),
         )
 
+    def get_cloud_name(self) -> str:
+        """Return cloud name."""
+        return self.external_cloud_provider.name
+
     def _get_metrics_endpoints(self) -> list:
         """Return the metrics endpoints for K8s components."""
         log.info("Building Prometheus scraping jobs.")
 
-        cos_user = f"system:cos:{self._get_node_name()}"
+        cos_user = f"system:cos:{self.get_node_name()}"
         token = self.tokens.get_token(cos_user)
 
         if not token:
@@ -286,8 +368,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
 
-    def _get_node_name(self) -> str:
-        fqdn = self.external_cloud_provider.name == "aws"
+    def get_node_name(self) -> str:
+        """Return node name."""
+        fqdn = self.get_cloud_name() == "aws"
         return kubernetes_snaps.get_node_name(fqdn)
 
     def _install_cni_binaries(self):
@@ -326,7 +409,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """Request authorization for kubelet and kube-proxy."""
         status.add(MaintenanceStatus("Requesting kubelet and kube-proxy credentials"))
 
-        node_user = f"system:node:{self._get_node_name()}"
+        node_user = f"system:node:{self.get_node_name()}"
         self.kube_control.set_auth_request(node_user)
 
     def _request_monitoring_token(self, event):
@@ -334,7 +417,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         if not self._check_tokens_integration(event):
             return
 
-        cos_user = f"system:cos:{self._get_node_name()}"
+        cos_user = f"system:cos:{self.get_node_name()}"
         self.tokens.request_token(cos_user, OBSERVABILITY_GROUP)
 
     def reconcile(self, event):
@@ -352,6 +435,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kernel_parameters()
         self._configure_kubelet(event)
         self._configure_kubeproxy(event)
+        self._configure_nginx_ingress_controller()
+        self._configure_labels()
 
     def _request_certificates(self):
         """Request client and server certificates."""
