@@ -423,6 +423,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def reconcile(self, event):
         """Reconcile state changing events."""
         self._install_cni_binaries()
+        self._set_workload_version()
         kubernetes_snaps.install(channel=self.model.config["channel"])
         kubernetes_snaps.configure_services_restart_always()
         self._request_certificates()
@@ -474,6 +475,20 @@ class KubernetesWorkerCharm(ops.CharmBase):
             server_cert=server_cert.cert,
             server_key=server_cert.key,
         )
+
+    def _set_workload_version(self):
+        cmd = ["kubelet", "--version"]
+        try:
+            version = subprocess.run(cmd, stdout=subprocess.PIPE)
+        except FileNotFoundError:
+            log.warning("kubelet not yet found, skip setting workload version")
+            return
+        if not version.returncode:
+            val = version.stdout.split(b" v")[-1].rstrip().decode()
+            log.info("Setting workload version to %s.", val)
+            self.unit.set_workload_version(val)
+        else:
+            self.unit.set_workload_version("")
 
 
 if __name__ == "__main__":  # pragma: nocover
