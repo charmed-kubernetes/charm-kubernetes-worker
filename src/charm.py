@@ -87,7 +87,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.label_maker = LabelMaker(self, kubeconfig_path="/root/.kube/config")
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
-
+        self.framework.observe(self.on.update_status, self.update_status)
         self.framework.observe(self.on.upgrade_action, self._on_upgrade_action)
 
     def _check_kubecontrol_integration(self, event) -> bool:
@@ -423,7 +423,6 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def reconcile(self, event):
         """Reconcile state changing events."""
         self._install_cni_binaries()
-        self._set_workload_version()
         kubernetes_snaps.install(channel=self.model.config["channel"])
         kubernetes_snaps.configure_services_restart_always()
         self._request_certificates()
@@ -453,6 +452,14 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         self.certificates.request_server_cert(cn=common_name, sans=sans)
         self.certificates.request_client_cert("system:kubelet")
+
+    def update_status(self, _event):
+        """Handle the update status hook event.
+
+        Changes to the unit.status shouldn't be triggered
+        here, but any periodic health events may be performed.
+        """
+        self._set_workload_version()
 
     def _write_certificates(self):
         """Write certificates from the certificates relation."""
