@@ -29,6 +29,11 @@ provides:
   cos-agent:
     interface: cos_agent
 requires:
+  aws:
+    interface: aws-integration
+    description: |
+      [Deprecated] only necessary for upgrades from 1.28 and can be removed after the upgrade
+      There's no need to relate if this is a fresh deployment
   certificates:
     interface: tls-certificates
   kube-control:
