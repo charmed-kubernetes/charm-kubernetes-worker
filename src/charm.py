@@ -370,8 +370,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def get_node_name(self) -> str:
         """Return node name."""
-        fqdn = self.get_cloud_name() == "aws"
-        return kubernetes_snaps.get_node_name(fqdn)
+        fqdn = self.external_cloud_provider.name == "aws" and self.external_cloud_provider.has_xcp
+        return kubernetes_snaps.get_node_name(fqdn=fqdn)
 
     def _install_cni_binaries(self):
         try:
