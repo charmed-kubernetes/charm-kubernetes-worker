@@ -30,7 +30,6 @@ from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
-from ops.model import MaintenanceStatus, ModelError, WaitingStatus
 
 log = logging.getLogger(__name__)
 
@@ -96,7 +95,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         evaluation = self.kube_control.evaluate_relation(event)
         if evaluation:
             current_status = (
-                WaitingStatus(evaluation)
+                ops.WaitingStatus(evaluation)
                 if "Waiting" in evaluation
                 else ops.BlockedStatus(evaluation)
             )
@@ -111,7 +110,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         if not evaluation:
             return True
         if any(e in evaluation for e in ("Waiting", "Token request")):
-            status.add(WaitingStatus(evaluation))
+            status.add(ops.WaitingStatus(evaluation))
         return False
 
     @status.on_error(ops.WaitingStatus("Waiting on CNI"))
@@ -137,14 +136,14 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _configure_kernel_parameters(self):
         """Configure the Kernel with the provided configuration."""
-        status.add(MaintenanceStatus("Configuring Kernel parameters"))
+        status.add(ops.MaintenanceStatus("Configuring Kernel parameters"))
 
         sysctl = yaml.safe_load(self.model.config.get("sysctl"))
         kubernetes_snaps.configure_kernel_parameters(sysctl)
 
     def _configure_kubelet(self, event):
         """Configure kubelet with the configuration parameters."""
-        status.add(MaintenanceStatus("Configuring kubelet"))
+        status.add(ops.MaintenanceStatus("Configuring kubelet"))
         if not self._check_kubecontrol_integration(event):
             return
 
@@ -164,7 +163,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _configure_kubeproxy(self, event):
         """Configure kube-proxy with the configuration parameters."""
-        status.add(MaintenanceStatus("Configuring kube-proxy"))
+        status.add(ops.MaintenanceStatus("Configuring kube-proxy"))
         if not self._check_kubecontrol_integration(event):
             return
         kubernetes_snaps.configure_kube_proxy(
@@ -181,7 +180,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             log.info("Waiting for kubeconfig before configuring labels")
             return
 
-        status.add(MaintenanceStatus("Configuring node labels"))
+        status.add(ops.MaintenanceStatus("Configuring node labels"))
 
         if self.label_maker.active_labels() is not None:
             self.label_maker.apply_node_labels()
@@ -192,7 +191,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             log.info("Waiting for kubeconfig before configuring ingress")
             return
 
-        status.add(MaintenanceStatus("Configuring ingress"))
+        status.add(ops.MaintenanceStatus("Configuring ingress"))
 
         manifest_dir = "/root/cdk/addons"
         manifest_path = manifest_dir + "/ingress-daemon-set.yaml"
@@ -249,10 +248,10 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _create_kubeconfigs(self, event):
         """Generate kubeconfig files for the cluster components."""
-        status.add(MaintenanceStatus("Generating Kubeconfig"))
+        status.add(ops.MaintenanceStatus("Generating Kubeconfig"))
         ca = self.certificates.ca
         if not ca:
-            status.add(WaitingStatus("Waiting for certificates"))
+            status.add(ops.WaitingStatus("Waiting for certificates"))
             return
 
         if not self._check_kubecontrol_integration(event):
@@ -261,12 +260,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
         node_user = f"system:node:{self.get_node_name()}"
         credentials = self.kube_control.get_auth_credentials(node_user)
         if not credentials:
-            status.add(WaitingStatus("Waiting for kube-control credentials"))
+            status.add(ops.WaitingStatus("Waiting for kube-control credentials"))
             return False
 
         servers = self.kube_control.get_api_endpoints()
         if not servers:
-            status.add(WaitingStatus("Waiting for API endpoints URLs"))
+            status.add(ops.WaitingStatus("Waiting for API endpoints URLs"))
             return
 
         server = servers[self._get_unit_number() % len(servers)]
@@ -380,7 +379,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def _install_cni_binaries(self):
         try:
             resource_path = self.model.resources.fetch("cni-plugins")
-        except ModelError:
+        except ops.ModelError:
             message = "Something went wrong when claiming 'cni-plugins' resource."
             status.add(ops.BlockedStatus(message))
             log.exception(message)
@@ -411,13 +410,13 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
-        status.add(MaintenanceStatus("Requesting kubelet and kube-proxy credentials"))
+        status.add(ops.MaintenanceStatus("Requesting kubelet and kube-proxy credentials"))
 
         node_user = f"system:node:{self.get_node_name()}"
         self.kube_control.set_auth_request(node_user)
 
     def _request_monitoring_token(self, event):
-        status.add(MaintenanceStatus("Requesting COS token"))
+        status.add(ops.MaintenanceStatus("Requesting COS token"))
         if not self._check_tokens_integration(event):
             return
 
@@ -444,7 +443,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _request_certificates(self):
         """Request client and server certificates."""
-        status.add(MaintenanceStatus("Requesting certificates"))
+        status.add(ops.MaintenanceStatus("Requesting certificates"))
         if not self.certificates.relation:
             status.add(ops.BlockedStatus("Missing integration to certificate authority."))
             return
@@ -467,7 +466,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _write_certificates(self):
         """Write certificates from the certificates relation."""
-        status.add(MaintenanceStatus("Writing certificates"))
+        status.add(ops.MaintenanceStatus("Writing certificates"))
 
         common_name = kubernetes_snaps.get_public_address()
         ca = self.certificates.ca
@@ -475,7 +474,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         client_cert = self.certificates.client_certs_map.get("system:kubelet")
 
         if not ca or not server_cert or not client_cert:
-            status.add(WaitingStatus("Waiting for certificates"))
+            status.add(ops.WaitingStatus("Waiting for certificates"))
             log.info("Certificates are not yet available.")
             return
 
