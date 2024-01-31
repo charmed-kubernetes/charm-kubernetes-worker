@@ -96,7 +96,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
         evaluation = self.kube_control.evaluate_relation(event)
         if evaluation:
             current_status = (
-                WaitingStatus(evaluation) if "Waiting" in evaluation else ops.BlockedStatus(evaluation)
+                WaitingStatus(evaluation)
+                if "Waiting" in evaluation
+                else ops.BlockedStatus(evaluation)
             )
             status.add(current_status)
             return False
@@ -209,9 +211,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 "ingress_uid": "101",
                 "juju_application": self.app.name,
                 "ssl_chain_completion": self.config["ingress-ssl-chain-completion"],
-                "use_forwarded_headers": "true"
-                if self.config["ingress-use-forwarded-headers"]
-                else "false",
+                "use_forwarded_headers": (
+                    "true" if self.config["ingress-use-forwarded-headers"] else "false"
+                ),
             }
 
             ssl_cert = self.config["ingress-default-ssl-certificate"]
