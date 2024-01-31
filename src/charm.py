@@ -25,7 +25,7 @@ from charms.interface_external_cloud_provider import ExternalCloudProvider
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
-from charms.reconciler import BlockedStatus, Reconciler
+from charms.reconciler import Reconciler
 from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
@@ -96,7 +96,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         evaluation = self.kube_control.evaluate_relation(event)
         if evaluation:
             current_status = (
-                WaitingStatus(evaluation) if "Waiting" in evaluation else BlockedStatus(evaluation)
+                WaitingStatus(evaluation) if "Waiting" in evaluation else ops.BlockedStatus(evaluation)
             )
             status.add(current_status)
             return False
@@ -112,6 +112,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             status.add(WaitingStatus(evaluation))
         return False
 
+    @status.on_error(ops.WaitingStatus("Waiting on CNI"))
     def _configure_cni(self):
         """Configure the CNI integration databag."""
         registry = self.kube_control.get_registry_location()
@@ -120,10 +121,11 @@ class KubernetesWorkerCharm(ops.CharmBase):
             self.cni.set_kubeconfig_hash_from_file(str(ROOT_KUBECONFIG_PATH))
             kubernetes_snaps.set_default_cni_conf_file(self.kube_control.get_default_cni())
 
+    @status.on_error(ops.WaitingStatus("Waiting on container-runtime"))
     def _configure_container_runtime(self):
         """Configure the container runtime in the node."""
         if not self.container_runtime.relations:
-            status.add(BlockedStatus("Missing container-runtime integration"))
+            status.add(ops.BlockedStatus("Missing container-runtime integration"))
             return
 
         registry = self.kube_control.get_registry_location()
@@ -378,7 +380,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             resource_path = self.model.resources.fetch("cni-plugins")
         except ModelError:
             message = "Something went wrong when claiming 'cni-plugins' resource."
-            status.add(BlockedStatus(message))
+            status.add(ops.BlockedStatus(message))
             log.exception(message)
             return
 
@@ -442,7 +444,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """Request client and server certificates."""
         status.add(MaintenanceStatus("Requesting certificates"))
         if not self.certificates.relation:
-            status.add(BlockedStatus("Missing integration to certificate authority."))
+            status.add(ops.BlockedStatus("Missing integration to certificate authority."))
             return
 
         bind_addrs = kubernetes_snaps.get_bind_addresses()
