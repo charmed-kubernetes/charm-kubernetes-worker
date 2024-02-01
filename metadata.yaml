@@ -14,10 +14,9 @@ description: |
   a pluggable infrastructure. Self healing in that it will automatically
   restart and place containers on healthy nodes if a node ever goes away.
 docs: https://discourse.charmhub.io/t/kubernetes-worker-docs-index/6104
-series:
-  - jammy
-  - focal
 subordinate: false
+assumes:
+  - juju >= 3.1
 peers:
   coordinator:
     # LP:2049953 needed for upgrading from < 1.29
