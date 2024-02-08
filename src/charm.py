@@ -207,9 +207,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 "ingress_uid": "101",
                 "juju_application": self.app.name,
                 "ssl_chain_completion": self.config["ingress-ssl-chain-completion"],
-                "use_forwarded_headers": "true"
-                if self.config["ingress-use-forwarded-headers"]
-                else "false",
+                "use_forwarded_headers": (
+                    "true" if self.config["ingress-use-forwarded-headers"] else "false"
+                ),
             }
 
             ssl_cert = self.config["ingress-default-ssl-certificate"]
