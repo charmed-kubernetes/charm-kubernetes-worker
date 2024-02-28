@@ -16,7 +16,6 @@ from subprocess import CalledProcessError
 import charms.contextual_status as status
 import ops
 import yaml
-from cloud_integration import CloudIntegration
 from charms import kubernetes_snaps
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.interface_container_runtime import ContainerRuntimeProvides
@@ -26,6 +25,7 @@ from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
 from cos_integration import COSIntegration
+from cloud_integration import CloudIntegration
 from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
@@ -45,6 +45,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
 
     def __init__(self, *args):
+        """Start entrypoint for Kubernetes Worker!"""
         super().__init__(*args)
         self.certificates = CertificatesRequires(self, endpoint="certificates")
         self.cni = KubernetesCniProvides(self, endpoint="cni", default_cni="")
@@ -200,12 +201,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
             ssl_cert = self.config["ingress-default-ssl-certificate"]
             ssl_key = self.config["ingress-default-ssl-key"]
             if ssl_cert and ssl_key:
+                default_cert_option = (
+                    "- --default-ssl-certificate=$(POD_NAMESPACE)/default-ssl-certificate"
+                )
                 context.update(
                     {
                         "default_ssl_certificate": b64encode(ssl_cert.encode("utf-8")).decode(
                             "utf-8"
                         ),
-                        "default_ssl_certificate_option": "- --default-ssl-certificate=$(POD_NAMESPACE)/default-ssl-certificate",
+                        "default_ssl_certificate_option": default_cert_option,
                         "default_ssl_key": b64encode(ssl_key.encode("utf-8")).decode("utf-8"),
                     }
                 )
@@ -305,6 +309,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     @status.on_error(ops.WaitingStatus("Waiting for cluster name"))
     def get_cluster_name(self) -> str:
+        """Get the cluster name from the kube-control relation."""
         assert self.kube_control.is_ready
         return self.kube_control.get_cluster_tag()
 
