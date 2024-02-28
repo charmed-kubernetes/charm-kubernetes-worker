@@ -16,6 +16,7 @@ from subprocess import CalledProcessError
 import charms.contextual_status as status
 import ops
 import yaml
+from cloud_integration import CloudIntegration
 from charms import kubernetes_snaps
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.interface_container_runtime import ContainerRuntimeProvides
@@ -64,6 +65,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.kube_control = KubeControlRequirer(self)
         self.label_maker = LabelMaker(self, kubeconfig_path="/root/.kube/config")
+        self.cloud_integration = CloudIntegration(self)
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
         self.framework.observe(self.on.update_status, self.update_status)
@@ -301,6 +303,11 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
 
+    @status.on_error(ops.WaitingStatus("Waiting for cluster name"))
+    def get_cluster_name(self) -> str:
+        assert self.kube_control.is_ready
+        return self.kube_control.get_cluster_tag()
+
     def get_node_name(self) -> str:
         """Return node name."""
         fqdn = self.external_cloud_provider.name == "aws" and self.external_cloud_provider.has_xcp
@@ -370,6 +377,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kubeproxy(event)
         self._configure_nginx_ingress_controller()
         self._configure_labels()
+        self.cloud_integration.integrate()
 
     def _request_certificates(self):
         """Request client and server certificates."""
