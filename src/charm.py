@@ -9,11 +9,9 @@ import os
 import shlex
 import subprocess
 from base64 import b64encode
-from dataclasses import dataclass
 from pathlib import Path
 from socket import gethostname
 from subprocess import CalledProcessError
-from typing import Dict, List
 
 import charms.contextual_status as status
 import ops
@@ -26,6 +24,7 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
+from cos_integration import COSIntegration
 from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
@@ -41,28 +40,6 @@ KUBEPROXY_KUBECONFIG_PATH = Path("/root/cdk/kubeproxyconfig")
 OBSERVABILITY_GROUP = "system:cos"
 
 
-@dataclass
-class JobConfig:
-    """Data class representing the configuration for a Prometheus scrape job.
-
-    Attributes:
-        name (str): The name of the scrape job. Corresponds to the name of the Kubernetes
-                    component being monitored (e.g., 'kube-apiserver').
-        metrics_path (str): The endpoint path where the metrics are exposed by the
-                            component (e.g., '/metrics').
-        scheme (str): The scheme used for the endpoint. (e.g.'http' or 'https').
-        target (str): The network address of the target component along with the port.
-                      Format is 'hostname:port' (e.g., 'localhost:6443').
-        relabel_configs (List[Dict[str, str]]): Additional configurations for relabeling.
-    """
-
-    name: str
-    metrics_path: str
-    scheme: str
-    target: str
-    relabel_configs: List[Dict[str, str]]
-
-
 class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
 
@@ -71,12 +48,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.certificates = CertificatesRequires(self, endpoint="certificates")
         self.cni = KubernetesCniProvides(self, endpoint="cni", default_cni="")
         self.container_runtime = ContainerRuntimeProvides(self, endpoint="container-runtime")
+        self.cos_integration = COSIntegration(self)
         self.cos_agent = COSAgentProvider(
             self,
             relation_name="cos-agent",
-            scrape_configs=self._get_metrics_endpoints,
+            scrape_configs=self._get_scrape_jobs,
             refresh_events=[
+                self.on.kube_control_relation_joined,
                 self.on.kube_control_relation_changed,
+                self.on.tokens_relation_joined,
                 self.on.tokens_relation_changed,
                 self.on.upgrade_charm,
             ],
@@ -306,67 +286,17 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """Return cloud name."""
         return self.external_cloud_provider.name
 
-    def _get_metrics_endpoints(self) -> list:
-        """Return the metrics endpoints for K8s components."""
-        log.info("Building Prometheus scraping jobs.")
-
+    def _get_scrape_jobs(self):
+        node_name = self.get_node_name()
         cos_user = f"system:cos:{self.get_node_name()}"
         token = self.tokens.get_token(cos_user)
+        cluster_name = self.kube_control.get_cluster_tag()
 
-        if not token:
-            log.info("Token not provided by the relation")
+        if not token or not cluster_name:
+            log.info("COS token not provided by the relation")
             return []
 
-        def create_scrape_job(config: JobConfig):
-            return {
-                "tls_config": {"insecure_skip_verify": True},
-                "authorization": {"credentials": token},
-                "job_name": config.name,
-                "metrics_path": config.metrics_path,
-                "scheme": config.scheme,
-                "static_configs": [
-                    {
-                        "targets": [config.target],
-                        "labels": {
-                            "node": kubernetes_snaps.get_node_name(),
-                            "cluster": self.kube_control.get_cluster_tag(),
-                        },
-                    }
-                ],
-                "relabel_configs": config.relabel_configs,
-            }
-
-        kubernetes_jobs = [
-            JobConfig(
-                "kube-proxy",
-                "/metrics",
-                "http",
-                "localhost:10249",
-                [{"target_label": "job", "replacement": "kube-proxy"}],
-            ),
-        ]
-        kubelet_metrics_paths = [
-            "/metrics",
-            "/metrics/resource",
-            "/metrics/cadvisor",
-            "/metrics/probes",
-        ]
-        kubelet_jobs = [
-            JobConfig(
-                f"kubelet-{metric}" if metric else "kubelet",
-                path,
-                "https",
-                "localhost:10250",
-                [
-                    {"target_label": "metrics_path", "replacement": path},
-                    {"target_label": "job", "replacement": "kubelet"},
-                ],
-            )
-            for path in kubelet_metrics_paths
-            if (metric := path.strip("/metrics")) is not None
-        ]
-
-        return [create_scrape_job(job) for job in kubernetes_jobs + kubelet_jobs]
+        return self.cos_integration.get_metrics_endpoints(node_name, token, cluster_name)
 
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
