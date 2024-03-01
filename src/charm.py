@@ -24,8 +24,8 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
-from cos_integration import COSIntegration
 from cloud_integration import CloudIntegration
+from cos_integration import COSIntegration
 from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
