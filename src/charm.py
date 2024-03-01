@@ -382,7 +382,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kubeproxy(event)
         self._configure_nginx_ingress_controller()
         self._configure_labels()
-        self.cloud_integration.integrate()
+        self.cloud_integration.integrate(event)
 
     def _request_certificates(self):
         """Request client and server certificates."""
