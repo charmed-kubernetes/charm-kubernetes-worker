@@ -24,6 +24,7 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
+from cloud_integration import CloudIntegration
 from cos_integration import COSIntegration
 from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
@@ -44,6 +45,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
 
     def __init__(self, *args):
+        """Start entrypoint for Kubernetes Worker!"""
         super().__init__(*args)
         self.certificates = CertificatesRequires(self, endpoint="certificates")
         self.cni = KubernetesCniProvides(self, endpoint="cni", default_cni="")
@@ -64,6 +66,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.kube_control = KubeControlRequirer(self)
         self.label_maker = LabelMaker(self, kubeconfig_path="/root/.kube/config")
+        self.cloud_integration = CloudIntegration(self)
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
         self.framework.observe(self.on.update_status, self.update_status)
@@ -198,12 +201,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
             ssl_cert = self.config["ingress-default-ssl-certificate"]
             ssl_key = self.config["ingress-default-ssl-key"]
             if ssl_cert and ssl_key:
+                default_cert_option = (
+                    "- --default-ssl-certificate=$(POD_NAMESPACE)/default-ssl-certificate"
+                )
                 context.update(
                     {
                         "default_ssl_certificate": b64encode(ssl_cert.encode("utf-8")).decode(
                             "utf-8"
                         ),
-                        "default_ssl_certificate_option": "- --default-ssl-certificate=$(POD_NAMESPACE)/default-ssl-certificate",
+                        "default_ssl_certificate_option": default_cert_option,
                         "default_ssl_key": b64encode(ssl_key.encode("utf-8")).decode("utf-8"),
                     }
                 )
@@ -301,6 +307,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
 
+    @status.on_error(ops.WaitingStatus("Waiting for cluster name"))
+    def get_cluster_name(self) -> str:
+        """Get the cluster name from the kube-control relation."""
+        assert self.kube_control.is_ready
+        return self.kube_control.get_cluster_tag()
+
     def get_node_name(self) -> str:
         """Return node name."""
         fqdn = self.external_cloud_provider.name == "aws" and self.external_cloud_provider.has_xcp
@@ -370,6 +382,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kubeproxy(event)
         self._configure_nginx_ingress_controller()
         self._configure_labels()
+        self.cloud_integration.integrate(event)
 
     def _request_certificates(self):
         """Request client and server certificates."""
