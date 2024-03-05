@@ -33,6 +33,8 @@ provides:
 requires:
   aws:
     interface: aws-integration
+  gcp:
+    interface: gcp-integration
   certificates:
     interface: tls-certificates
   kube-control:
