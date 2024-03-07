@@ -4,10 +4,12 @@
 """Cloud Integration for Charmed Kubernetes Worker."""
 
 import logging
+from typing import Union
 
 import charms.contextual_status as status
 import ops
 from ops.interface_aws.requires import AWSIntegrationRequires
+from ops.interface_gcp.requires import GCPIntegrationRequires
 
 log = logging.getLogger(__name__)
 
@@ -29,22 +31,19 @@ class CloudIntegration:
         """Integrate with all possible clouds."""
         self.charm = charm
         self.aws = AWSIntegrationRequires(charm)
-        self.gcp = None  # GCPIntegrationRequires(charm)
+        self.gcp = GCPIntegrationRequires(charm)
         self.azure = None  # AzureIntegrationRequires(charm)
 
-    @status.on_error(ops.WaitingStatus("Waiting for cloud-integration"))
-    def integrate(self, event: ops.EventBase):
-        """Request tags and permissions for a control-plane node."""
-        cluster_tag = self.charm.get_cluster_name()
+    @property
+    def cloud(self) -> Union[None, AWSIntegrationRequires, GCPIntegrationRequires]:
+        """Determine if we're integrated with a known cloud."""
         cloud_name = self.charm.get_cloud_name()
         cloud_support = {
             "aws": self.aws,
+            "gce": self.gcp,
         }
-
         if not (cloud := cloud_support.get(cloud_name)):
-            log.error(
-                "Skipping Cloud integration: unsupported cloud %s",
-            )
+            log.error("Skipping Cloud integration: unsupported cloud %s", cloud_name)
             return
 
         if not cloud.relation:
@@ -52,8 +51,18 @@ class CloudIntegration:
                 "Skipping Cloud integration: Needs an active %s relation to integrate.", cloud_name
             )
             return
+        return cloud
 
-        status.add(ops.MaintenanceStatus(f"Integrate with {cloud}"))
+    @status.on_error(ops.WaitingStatus("Waiting for cloud-integration"))
+    def integrate(self, event: ops.EventBase):
+        """Request tags and permissions for a worker node."""
+        if not (cloud := self.cloud):
+            return None
+
+        cloud_name = self.charm.get_cloud_name()
+        cluster_tag = self.charm.get_cluster_name()
+
+        status.add(ops.MaintenanceStatus(f"Integrate with {cloud_name}"))
         if cloud_name == "aws":
             cloud.tag_instance(
                 {
@@ -71,19 +80,11 @@ class CloudIntegration:
                 }
             )
             cloud.enable_object_storage_management(["kubernetes-*"])
-        elif cloud_name == "gcp":
-            cloud.tag_instance(
-                {
-                    "k8s-io-cluster-name": cluster_tag,
-                }
-            )
+        elif cloud_name == "gce":
+            cloud.tag_instance({"k8s-io-cluster-name": cluster_tag})
             cloud.enable_object_storage_management()
         elif cloud_name == "azure":
-            cloud.tag_instance(
-                {
-                    "k8s-io-cluster-name": cluster_tag,
-                }
-            )
+            cloud.tag_instance({"k8s-io-cluster-name": cluster_tag})
             cloud.enable_object_storage_management()
         cloud.enable_instance_inspection()
         cloud.enable_dns_management()
