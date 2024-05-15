@@ -66,6 +66,6 @@ class HttpProvides:
                     {
                         "hostname": hostname or ingress_address,
                         "private-address": private_address or ingress_address,
-                        "port": port,
+                        "port": str(port),
                     }
                 )
