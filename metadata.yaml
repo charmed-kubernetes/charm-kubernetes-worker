@@ -30,6 +30,8 @@ provides:
     scope: container
   cos-agent:
     interface: cos_agent
+  ingress-proxy:
+    interface: http
 requires:
   aws:
     interface: aws-integration

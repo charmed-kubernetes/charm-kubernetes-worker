@@ -26,6 +26,7 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import BlockedStatus, Reconciler
+from http_provides import HttpProvides
 from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
 from ops.interface_kube_control import KubeControlRequirer
@@ -83,6 +84,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             ],
         )
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
+        self.ingress_proxy = HttpProvides(self, "ingress-proxy")
         self.kube_control = KubeControlRequirer(self)
         self.label_maker = LabelMaker(self, kubeconfig_path="/root/.kube/config")
         self.tokens = TokensRequirer(self)
@@ -437,6 +439,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kubeproxy(event)
         self._configure_nginx_ingress_controller()
         self._configure_labels()
+        self.ingress_proxy.configure(port=80)
 
     def _request_certificates(self):
         """Request client and server certificates."""
