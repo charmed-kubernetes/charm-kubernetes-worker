@@ -359,6 +359,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         node_user = f"system:node:{self.get_node_name()}"
         self.kube_control.set_auth_request(node_user)
 
+    @status.on_error(ops.WaitingStatus("Waiting for COS token"))
     def _request_monitoring_token(self, event):
         status.add(ops.MaintenanceStatus("Requesting COS token"))
         if not self._check_tokens_integration(event):
@@ -366,6 +367,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         cos_user = f"system:cos:{self.get_node_name()}"
         self.tokens.request_token(cos_user, OBSERVABILITY_GROUP)
+        assert not self.tokens.in_flight_requests()
 
     def reconcile(self, event):
         """Reconcile state changing events."""
