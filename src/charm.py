@@ -24,13 +24,14 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
+from jinja2 import Environment, FileSystemLoader
+from ops.interface_kube_control import KubeControlRequirer
+from ops.interface_tls_certificates import CertificatesRequires
+
 from cloud_integration import CloudIntegration
 from cos_integration import COSIntegration
 from http_provides import HttpProvides
-from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
-from ops.interface_kube_control import KubeControlRequirer
-from ops.interface_tls_certificates import CertificatesRequires
 
 log = logging.getLogger(__name__)
 
@@ -348,9 +349,13 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _on_upgrade_action(self, event):
         """Handle the upgrade action."""
-        with status.context(self.unit):
-            channel = self.model.config.get("channel")
-            kubernetes_snaps.upgrade_snaps(channel=channel, event=event)
+        channel = self.model.config.get("channel")
+        try:
+            kubernetes_snaps.upgrade_snaps(channel=channel, event=event, control_plane=True)
+        except Exception as e:
+            event.fail(str(e))
+            return
+        self.reconciler.reconcile(event)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
