@@ -350,12 +350,11 @@ class KubernetesWorkerCharm(ops.CharmBase):
     def _on_upgrade_action(self, event):
         """Handle the upgrade action."""
         channel = self.model.config.get("channel")
-        try:
-            kubernetes_snaps.upgrade_snaps(channel=channel, event=event, control_plane=True)
-        except Exception as e:
-            event.fail(str(e))
-            return
-        self.reconciler.reconcile(event)
+        with status.context(self.unit):
+            kubernetes_snaps.upgrade_snaps(channel=channel, event=event)
+        if isinstance(self.unit.status, ops.ActiveStatus):
+            # After successful upgrade, reconcile the charm to ensure it is in the desired state
+            self.reconciler.reconcile(event)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
