@@ -24,13 +24,14 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
+from jinja2 import Environment, FileSystemLoader
+from ops.interface_kube_control import KubeControlRequirer
+from ops.interface_tls_certificates import CertificatesRequires
+
 from cloud_integration import CloudIntegration
 from cos_integration import COSIntegration
 from http_provides import HttpProvides
-from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
-from ops.interface_kube_control import KubeControlRequirer
-from ops.interface_tls_certificates import CertificatesRequires
 
 log = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             image = self.config["nginx-image"]
             if image == "" or image == "auto":
                 registry = self.kube_control.get_registry_location() or "registry.k8s.io"
-                image = f"{registry}/ingress-nginx/controller:v1.6.4"
+                image = f"{registry}/ingress-nginx/controller:v1.11.2"
 
             context = {
                 "daemonset_api_version": "apps/v1",
@@ -348,9 +349,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _on_upgrade_action(self, event):
         """Handle the upgrade action."""
+        channel = self.model.config.get("channel")
         with status.context(self.unit):
-            channel = self.model.config.get("channel")
             kubernetes_snaps.upgrade_snaps(channel=channel, event=event)
+        if isinstance(self.unit.status, ops.ActiveStatus):
+            # After successful upgrade, reconcile the charm to ensure it is in the desired state
+            self.reconciler.reconcile(event)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""

@@ -9,11 +9,12 @@ from unittest.mock import MagicMock, PropertyMock, call, patch
 import ops
 import ops.testing
 import pytest
-from charm import KubernetesWorkerCharm
 from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from ops.interface_tls_certificates import CertificatesRequires
 from ops.testing import Harness
+
+from charm import KubernetesWorkerCharm
 
 ops.testing.SIMULATE_CAN_CONNECT = True
 
