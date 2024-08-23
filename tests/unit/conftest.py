@@ -20,6 +20,7 @@ MARKERS_AND_MOCKS = {
     "_configure_kernel_parameters": "skip_configure_kernel_parameters",
     "_configure_kubelet": "skip_configure_kubelet",
     "_configure_kubeproxy": "skip_configure_kubeproxy",
+    "_install_cni_binaries": "skip_install_cni_binaries",
 }
 
 
@@ -57,5 +58,5 @@ def charm_environment(request, harness: Harness[KubernetesWorkerCharm]):
                 mocks[method] = mock_method
         with mock.patch("charm.kubernetes_snaps", autospec=True) as mock_kubernetes_snaps:
             mocks["kubernetes_snaps"] = mock_kubernetes_snaps
-            harness.begin_with_initial_hooks()
+            harness.begin()
             yield (harness.charm, mocks)

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, PropertyMock, call, patch
 import ops
 import ops.testing
 import pytest
+from charms.contextual_status import ReconcilerError
 from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from ops.interface_tls_certificates import CertificatesRequires
@@ -40,65 +41,64 @@ def test__check_kubecontrol_integration(
         assert result is result
 
 
-@pytest.mark.parametrize(
-    "registry,hash",
-    [
-        pytest.param(
-            "myregistry.com",
-            "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
-            id="Registry available",
-        ),
-        pytest.param(None, None, id="Integration not ready"),
-    ],
-)
 @pytest.mark.skip_configure_cni
-def test__configure_cni(
-    harness: Harness[KubernetesWorkerCharm],
-    charm_environment: CharmEnvironment,
-    registry: str,
-    hash: str,
+@patch("charms.interface_kubernetes_cni.hash_file")
+def test_configure_cni_registry(
+    mock_hash, charm_environment: CharmEnvironment, harness: Harness[KubernetesWorkerCharm]
 ):
     charm, _ = charm_environment
+    harness.disable_hooks()
+    mock_hash.return_value = hash = (
+        "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+    )
     with patch.object(charm.kube_control, "get_registry_location") as mock_get_registry:
-        with patch("charms.interface_kubernetes_cni.hash_file") as mock_hash:
-            cni_relation_id = harness.add_relation("cni", "calico")
-            mock_hash.return_value = hash
-            harness.add_relation_unit(cni_relation_id, "calico/0")
-            mock_get_registry.return_value = registry
-            charm._configure_cni()
-            relation_data = harness.get_relation_data(cni_relation_id, "kubernetes-worker/0")
-            assert relation_data.get("image-registry", None) == registry
-            assert relation_data.get("kubeconfig-hash") == hash
+        mock_get_registry.return_value = registry = "myregistry.com"
+        cni_relation_id = harness.add_relation("cni", "calico")
+        harness.add_relation_unit(cni_relation_id, "calico/0")
+        charm._configure_cni()
+        relation_data = harness.get_relation_data(cni_relation_id, "kubernetes-worker/0")
+        assert relation_data.get("image-registry", None) == registry
+        assert relation_data.get("kubeconfig-hash") == hash
 
 
-@pytest.mark.parametrize(
-    "registry,image",
-    [
-        pytest.param(
-            "myregistry.com",
-            "myregistry.com/pause:3.9",
-            id="Registry available",
-        ),
-        pytest.param(None, None, id="Integration not ready"),
-    ],
-)
+@pytest.mark.skip_configure_cni
+def test_configure_cni_registry_no_cni(
+    charm_environment: CharmEnvironment, harness: Harness[KubernetesWorkerCharm]
+):
+    charm, _ = charm_environment
+    harness.disable_hooks()
+    with pytest.raises(ReconcilerError) as ie:
+        charm._configure_cni()
+    assert ie.match("Found expected exception: CNI relation not established")
+
+
 @pytest.mark.skip_configure_container_runtime
-def test__configure_container_runtime(
-    harness: Harness[KubernetesWorkerCharm],
-    charm_environment: CharmEnvironment,
-    registry: str,
-    image: str,
+def test_configure_container_runtime(
+    charm_environment: CharmEnvironment, harness: Harness[KubernetesWorkerCharm]
 ):
     charm, mocks = charm_environment
+    harness.disable_hooks()
     mock_k8s_snaps = mocks["kubernetes_snaps"]
+
     with patch.object(charm.kube_control, "get_registry_location") as mock_get_registry:
-        mock_k8s_snaps.get_sandbox_image.return_value = image
+        mock_k8s_snaps.get_sandbox_image.return_value = image = "myregistry.com/pause:3.9"
+        mock_get_registry.return_value = "myregistry.com"
         cri_relation_id = harness.add_relation("container-runtime", "containerd")
         harness.add_relation_unit(cri_relation_id, "containerd/0")
-        mock_get_registry.return_value = registry
         charm._configure_container_runtime()
         relation_data = harness.get_relation_data(cri_relation_id, "kubernetes-worker/0")
         assert relation_data.get("sandbox_image", None) == image
+
+
+@pytest.mark.skip_configure_container_runtime
+def test_configure_container_runtime_no_integration(
+    charm_environment: CharmEnvironment, harness: Harness[KubernetesWorkerCharm]
+):
+    charm, _ = charm_environment
+    harness.disable_hooks()
+    with pytest.raises(ReconcilerError) as ie:
+        charm._configure_container_runtime()
+    assert ie.match("Found expected exception: container-runtime not established")
 
 
 @pytest.mark.skip_configure_kernel_parameters
