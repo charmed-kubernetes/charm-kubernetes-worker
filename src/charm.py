@@ -68,7 +68,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.ingress_proxy = HttpProvides(self, "ingress-proxy")
         self.kube_control = KubeControlRequirer(self)
-        self.label_maker = LabelMaker(self, kubeconfig_path=ROOT_KUBECONFIG_PATH)
+        self.label_maker = LabelMaker(self, kubeconfig_path=ROOT_KUBECONFIG_PATH, timeout=30)
         self.cloud_integration = CloudIntegration(self)
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
@@ -161,15 +161,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
             external_cloud_provider=self.external_cloud_provider,
         )
 
+    @status.on_error(ops.WaitingStatus("Waiting to apply node labels"))
     def _apply_node_labels(self):
         """Apply node labels."""
         status.add(ops.MaintenanceStatus("Apply Node Labels"))
-        node = self.get_node_name()
         if self.label_maker.active_labels() is not None:
             self.label_maker.apply_node_labels()
-            log.info("Node %s labelled successfully", node)
+            log.info("Node %s labelled successfully", self.get_node_name())
         else:
-            log.info("Node %s not yet labelled", node)
+            raise status.ReconcilerError("Failed to apply node labels")
 
     @status.on_error(ops.WaitingStatus("Waiting to configure ingress controller"))
     def _configure_nginx_ingress_controller(self):

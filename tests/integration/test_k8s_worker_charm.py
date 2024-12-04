@@ -2,10 +2,13 @@
 # Copyright 2023 Canonical
 # See LICENSE file for licensing details.
 
+import asyncio
+import json
 import logging
 from pathlib import Path
 
 import pytest
+from juju import application, model
 from pytest_operator.plugin import OpsTest
 
 log = logging.getLogger(__name__)
@@ -52,3 +55,53 @@ def test_status(ops_test):
     k8s_version_str = worker_app.data["workload-version"]
     assert k8s_version_str, "Workload version is unset"
     assert tuple(int(i) for i in k8s_version_str.split(".")[:2]) >= (1, 26)
+
+
+async def get_nodes(k8s):
+    """Get list of Nodes.
+
+    Args:
+        k8s: any k8s unit
+
+    Returns:
+        list of nodes
+    """
+    action = await k8s.run("kubectl --kubeconfig=/root/.kube/config get nodes -o json")
+    result = await action.wait()
+    assert result.results["return-code"] == 0, "Failed to get nodes with kubectl"
+    log.info("Parsing node list...")
+    node_list = json.loads(result.results["stdout"])
+    assert node_list["kind"] == "List", "Should have found a list of nodes"
+    return node_list["items"]
+
+
+async def test_nodes_labelled(request, ops_test):
+    """Test the charms label the nodes appropriately."""
+    testname: str = request.node.name
+    kubernetes_cluster: model.Model = ops_test.model
+    kcp: application.Application = kubernetes_cluster.applications["kubernetes-control-plane"]
+    worker: application.Application = kubernetes_cluster.applications["kubernetes-worker"]
+    label_config = {"labels": f"{testname}="}
+    await asyncio.gather(kcp.set_config(label_config), worker.set_config(label_config))
+    await kubernetes_cluster.wait_for_idle(status="active", timeout=10 * 60)
+
+    try:
+        nodes = await get_nodes(kcp.units[0])
+        labelled = [n for n in nodes if testname in n["metadata"]["labels"]]
+        juju_nodes = [n for n in nodes if "juju-charm" in n["metadata"]["labels"]]
+        assert len(kcp.units + worker.units) == len(
+            labelled
+        ), "Not all nodes labelled with custom-label"
+        assert len(kcp.units + worker.units) == len(
+            juju_nodes
+        ), "Not all nodes labelled as juju-charms"
+    finally:
+        await asyncio.gather(
+            kcp.reset_config(list(label_config)), worker.reset_config(list(label_config))
+        )
+
+    await kubernetes_cluster.wait_for_idle(status="active", timeout=10 * 60)
+    nodes = await get_nodes(kcp.units[0])
+    labelled = [n for n in nodes if testname in n["metadata"]["labels"]]
+    juju_nodes = [n for n in nodes if "juju-charm" in n["metadata"]["labels"]]
+    assert 0 == len(labelled), "Not all nodes labelled with custom-label"
