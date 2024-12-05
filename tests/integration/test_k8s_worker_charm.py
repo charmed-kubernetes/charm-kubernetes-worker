@@ -82,19 +82,20 @@ async def test_nodes_labelled(request, ops_test):
     kcp: application.Application = kubernetes_cluster.applications["kubernetes-control-plane"]
     worker: application.Application = kubernetes_cluster.applications["kubernetes-worker"]
     label_config = {"labels": f"{testname}="}
+    juju_charm_label = "juju-charm"
     await asyncio.gather(kcp.set_config(label_config), worker.set_config(label_config))
     await kubernetes_cluster.wait_for_idle(status="active", timeout=10 * 60)
 
     try:
         nodes = await get_nodes(kcp.units[0])
         labelled = [n for n in nodes if testname in n["metadata"]["labels"]]
-        juju_nodes = [n for n in nodes if "juju-charm" in n["metadata"]["labels"]]
+        juju_nodes = [n for n in nodes if juju_charm_label in n["metadata"]["labels"]]
         assert len(kcp.units + worker.units) == len(
             labelled
-        ), "Not all nodes labelled with custom-label"
+        ), f"{len(labelled)}/{len(kcp.units + worker.units)} nodes labelled with custom-label"
         assert len(kcp.units + worker.units) == len(
             juju_nodes
-        ), "Not all nodes labelled as juju-charms"
+        ), f"{len(juju_nodes)}/{len(kcp.units + worker.units)} nodes labelled as juju-charms"
     finally:
         await asyncio.gather(
             kcp.reset_config(list(label_config)), worker.reset_config(list(label_config))
@@ -103,5 +104,4 @@ async def test_nodes_labelled(request, ops_test):
     await kubernetes_cluster.wait_for_idle(status="active", timeout=10 * 60)
     nodes = await get_nodes(kcp.units[0])
     labelled = [n for n in nodes if testname in n["metadata"]["labels"]]
-    juju_nodes = [n for n in nodes if "juju-charm" in n["metadata"]["labels"]]
-    assert 0 == len(labelled), "Not all nodes labelled with custom-label"
+    assert 0 == len(labelled), f"No nodes should have custom labels, found {len(labelled)}"
