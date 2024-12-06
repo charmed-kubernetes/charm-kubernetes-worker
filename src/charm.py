@@ -28,6 +28,8 @@ from jinja2 import Environment, FileSystemLoader
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
 
+import actions.cis_benchmark
+import actions.upgrade
 from cloud_integration import CloudIntegration
 from cos_integration import COSIntegration
 from http_provides import HttpProvides
@@ -71,9 +73,14 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.label_maker = LabelMaker(self, kubeconfig_path=ROOT_KUBECONFIG_PATH, timeout=30)
         self.cloud_integration = CloudIntegration(self)
         self.tokens = TokensRequirer(self)
+        self.cis_benchmark = actions.cis_benchmark.CISBenchmark(self)
+
         self.reconciler = Reconciler(self, self.reconcile)
+        self.framework.observe(self.on.upgrade_action, self._upgrade_action)
         self.framework.observe(self.on.update_status, self.update_status)
-        self.framework.observe(self.on.upgrade_action, self._on_upgrade_action)
+
+    def _upgrade_action(self, event):
+        return actions.upgrade.upgrade_action(self, event)
 
     def _check_kubecontrol_integration(self, event) -> bool:
         """Check the integration status with kube-control."""
@@ -336,15 +343,6 @@ class KubernetesWorkerCharm(ops.CharmBase):
             raise
 
         log.info(f"Extracted 'cni-plugins' to {unpack_path}")
-
-    def _on_upgrade_action(self, event):
-        """Handle the upgrade action."""
-        channel = self.model.config.get("channel")
-        with status.context(self.unit):
-            kubernetes_snaps.upgrade_snaps(channel=channel, event=event)
-        if isinstance(self.unit.status, ops.ActiveStatus):
-            # After successful upgrade, reconcile the charm to ensure it is in the desired state
-            self.reconciler.reconcile(event)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
