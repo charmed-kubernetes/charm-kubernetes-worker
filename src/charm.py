@@ -5,7 +5,6 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
-import os
 import shlex
 import subprocess
 from base64 import b64encode
