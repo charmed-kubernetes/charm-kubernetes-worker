@@ -37,8 +37,9 @@ log = logging.getLogger(__name__)
 
 ROOT_KUBECONFIG_PATH = Path("/root/.kube/config")
 UBUNTU_KUBECONFIG_PATH = Path("/home/ubuntu/.kube/config")
-KUBELET_KUBECONFIG_PATH = Path("/root/cdk/kubeconfig")
-KUBEPROXY_KUBECONFIG_PATH = Path("/root/cdk/kubeproxyconfig")
+CDK_DIR_PATH = Path("/root/cdk")
+KUBELET_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeconfig"
+KUBEPROXY_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeproxyconfig"
 
 OBSERVABILITY_GROUP = "system:cos"
 
@@ -179,8 +180,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         status.add(ops.MaintenanceStatus("Configuring ingress"))
 
-        manifest_dir = "/root/cdk/addons"
-        manifest_path = manifest_dir + "/ingress-daemon-set.yaml"
+        manifest_dir = CDK_DIR_PATH / "addons"
+        manifest_file_name = "ingress-daemon-set.yaml"
+        manifest_path = manifest_dir / manifest_file_name
 
         if self.config["ingress"]:
             image = self.config["nginx-image"]
@@ -218,9 +220,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 )
 
             env = Environment(loader=FileSystemLoader("templates"))
-            template = env.get_template("ingress-daemon-set.yaml")
+            template = env.get_template(manifest_file_name)
             output = template.render(context)
-            os.makedirs(manifest_dir, exist_ok=True)
+            manifest_dir.mkdir(exist_ok=True)
             with open(manifest_path, "w") as f:
                 f.write(output)
             kubectl("apply", "-f", manifest_path)
@@ -231,9 +233,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
             self.unit.close_port("tcp", 80)
             self.unit.close_port("tcp", 443)
 
-            if os.path.exists(manifest_path):
+            if manifest_path.exists():
                 kubectl("delete", "--ignore-not-found", "-f", manifest_path)
-                os.remove(manifest_path)
+                manifest_path.unlink()
 
     @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _create_kubeconfigs(self, event):
