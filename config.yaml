@@ -1,7 +1,7 @@
 options:
   channel:
     type: string
-    default: "latest/edge"
+    default: "1.32/stable"
     description: |
       Snap channel to install Kubernetes worker services from
   ingress:
