@@ -34,6 +34,7 @@ metadata:
     cdk-{{ juju_application }}-ingress: "true"
 data:
   use-forwarded-headers: "{{ use_forwarded_headers }}"
+  proxy-real-ip-cidr: "{{ proxy_real_ip_cidr }}"
 
 ---
 kind: ConfigMap
