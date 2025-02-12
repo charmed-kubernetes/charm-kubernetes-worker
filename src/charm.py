@@ -200,6 +200,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 "use_forwarded_headers": (
                     "true" if self.config["ingress-use-forwarded-headers"] else "false"
                 ),
+                # NOTE(Hue): The default comes from https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#proxy-real-ip-cidr
+                "proxy_real_ip_cidr": self.config.get("ingress-proxy-real-ip-cidr", "0.0.0.0/0"),
             }
 
             ssl_cert = self.config["ingress-default-ssl-certificate"]
