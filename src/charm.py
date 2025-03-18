@@ -102,7 +102,10 @@ class KubernetesWorkerCharm(ops.CharmBase):
     @status.on_error(ops.BlockedStatus("Missing CNI Integration"))
     def _configure_cni(self):
         """Configure the CNI integration databag."""
-        if not (self.cni and self.cni.default_relation):
+        if not self.cni.default_relation:
+            if self.model.config["ignore-missing-cni"]:
+                log.info("Ignoring missing CNI configuration as per user request.")
+                return
             raise status.ReconcilerError("CNI relation not established")
         status.add(ops.MaintenanceStatus("Configuring CNI"))
         registry = self.kube_control.get_registry_location()

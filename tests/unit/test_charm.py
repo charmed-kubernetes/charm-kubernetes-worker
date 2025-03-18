@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import logging
 from typing import Mapping, Tuple
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
@@ -63,13 +64,21 @@ def test_configure_cni_registry(
 
 @pytest.mark.skip_configure_cni
 def test_configure_cni_registry_no_cni(
-    charm_environment: CharmEnvironment, harness: Harness[KubernetesWorkerCharm]
+    charm_environment: CharmEnvironment,
+    harness: Harness[KubernetesWorkerCharm],
+    caplog
 ):
     charm, _ = charm_environment
     harness.disable_hooks()
     with pytest.raises(ReconcilerError) as ie:
         charm._configure_cni()
     assert ie.match("Found expected exception: CNI relation not established")
+
+    harness.update_config({"ignore-missing-cni": True})
+    charm._configure_cni()
+    infos = [log[2] for log in caplog.record_tuples if log[1] == logging.INFO]
+    assert len(infos) == 1, "There should be only one info level log"
+    assert ["Ignoring missing CNI configuration as per user request."] == infos
 
 
 @pytest.mark.skip_configure_container_runtime
