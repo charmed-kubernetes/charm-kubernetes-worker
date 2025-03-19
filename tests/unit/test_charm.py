@@ -68,17 +68,19 @@ def test_configure_cni_registry_no_cni(
     harness: Harness[KubernetesWorkerCharm],
     caplog
 ):
-    charm, _ = charm_environment
+    charm, mocks = charm_environment
     harness.disable_hooks()
     with pytest.raises(ReconcilerError) as ie:
         charm._configure_cni()
     assert ie.match("Found expected exception: CNI relation not established")
+    mocks["kubernetes_snaps"].set_default_cni_conf_file.assert_not_called()
 
     harness.update_config({"ignore-missing-cni": True})
     charm._configure_cni()
     infos = [log[2] for log in caplog.record_tuples if log[1] == logging.INFO]
     assert len(infos) == 1, "There should be only one info level log"
     assert ["Ignoring missing CNI configuration as per user request."] == infos
+    mocks["kubernetes_snaps"].set_default_cni_conf_file.assert_called_once_with(None)
 
 
 @pytest.mark.skip_configure_container_runtime
