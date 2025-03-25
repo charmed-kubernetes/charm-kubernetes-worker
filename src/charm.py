@@ -5,7 +5,6 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
-import os
 import shlex
 import subprocess
 from base64 import b64encode
@@ -37,8 +36,9 @@ log = logging.getLogger(__name__)
 
 ROOT_KUBECONFIG_PATH = Path("/root/.kube/config")
 UBUNTU_KUBECONFIG_PATH = Path("/home/ubuntu/.kube/config")
-KUBELET_KUBECONFIG_PATH = Path("/root/cdk/kubeconfig")
-KUBEPROXY_KUBECONFIG_PATH = Path("/root/cdk/kubeproxyconfig")
+CDK_DIR_PATH = Path("/root/cdk")
+KUBELET_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeconfig"
+KUBEPROXY_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeproxyconfig"
 
 OBSERVABILITY_GROUP = "system:cos"
 
@@ -68,7 +68,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
         self.ingress_proxy = HttpProvides(self, "ingress-proxy")
         self.kube_control = KubeControlRequirer(self)
-        self.label_maker = LabelMaker(self, kubeconfig_path="/root/.kube/config")
+        self.label_maker = LabelMaker(self, kubeconfig_path=ROOT_KUBECONFIG_PATH, timeout=30)
         self.cloud_integration = CloudIntegration(self)
         self.tokens = TokensRequirer(self)
         self.reconciler = Reconciler(self, self.reconcile)
@@ -99,39 +99,39 @@ class KubernetesWorkerCharm(ops.CharmBase):
             status.add(ops.WaitingStatus(evaluation))
         return False
 
-    @status.on_error(ops.WaitingStatus("Waiting on CNI"))
+    @status.on_error(ops.BlockedStatus("Missing CNI Integration"))
     def _configure_cni(self):
         """Configure the CNI integration databag."""
+        if not (self.cni and self.cni.default_relation):
+            raise status.ReconcilerError("CNI relation not established")
+        status.add(ops.MaintenanceStatus("Configuring CNI"))
         registry = self.kube_control.get_registry_location()
-        if registry:
-            self.cni.set_image_registry(registry)
-            self.cni.set_kubeconfig_hash_from_file(str(ROOT_KUBECONFIG_PATH))
-            kubernetes_snaps.set_default_cni_conf_file(self.kube_control.get_default_cni())
+        self.cni.set_image_registry(registry)
+        self.cni.set_kubeconfig_hash_from_file(str(ROOT_KUBECONFIG_PATH))
+        kubernetes_snaps.set_default_cni_conf_file(self.kube_control.get_default_cni())
 
-    @status.on_error(ops.WaitingStatus("Waiting on container-runtime"))
+    @status.on_error(ops.BlockedStatus("Missing container-runtime integration"))
     def _configure_container_runtime(self):
         """Configure the container runtime in the node."""
         if not self.container_runtime.relations:
-            status.add(ops.BlockedStatus("Missing container-runtime integration"))
-            return
-
+            raise status.ReconcilerError("container-runtime not established")
+        status.add(ops.MaintenanceStatus("Configuring CRI"))
         registry = self.kube_control.get_registry_location()
-        if registry:
-            sandbox_image = kubernetes_snaps.get_sandbox_image(registry)
-            self.container_runtime.set_sandbox_image(sandbox_image)
+        sandbox_image = kubernetes_snaps.get_sandbox_image(registry)
+        self.container_runtime.set_sandbox_image(sandbox_image)
 
     def _configure_kernel_parameters(self):
         """Configure the Kernel with the provided configuration."""
         status.add(ops.MaintenanceStatus("Configuring Kernel parameters"))
-
         sysctl = yaml.safe_load(self.model.config.get("sysctl"))
         kubernetes_snaps.configure_kernel_parameters(sysctl)
 
+    @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _configure_kubelet(self, event):
         """Configure kubelet with the configuration parameters."""
         status.add(ops.MaintenanceStatus("Configuring kubelet"))
         if not self._check_kubecontrol_integration(event):
-            return
+            raise status.ReconcilerError("kube-control not ready")
 
         dns = self.kube_control.get_dns()
         kubernetes_snaps.configure_kubelet(
@@ -147,11 +147,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
             taints=None,
         )
 
+    @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _configure_kubeproxy(self, event):
         """Configure kube-proxy with the configuration parameters."""
         status.add(ops.MaintenanceStatus("Configuring kube-proxy"))
         if not self._check_kubecontrol_integration(event):
-            return
+            raise status.ReconcilerError("kube-control not ready")
         kubernetes_snaps.configure_kube_proxy(
             cluster_cidr=self.cni.cidr,
             extra_args_config=self.model.config.get("proxy-extra-args"),
@@ -160,27 +161,27 @@ class KubernetesWorkerCharm(ops.CharmBase):
             external_cloud_provider=self.external_cloud_provider,
         )
 
-    def _configure_labels(self):
-        """Configure labels."""
-        if not os.path.exists("/root/.kube/config"):
-            log.info("Waiting for kubeconfig before configuring labels")
-            return
-
-        status.add(ops.MaintenanceStatus("Configuring node labels"))
-
+    @status.on_error(ops.WaitingStatus("Waiting to apply node labels"))
+    def _apply_node_labels(self):
+        """Apply node labels."""
+        status.add(ops.MaintenanceStatus("Apply Node Labels"))
         if self.label_maker.active_labels() is not None:
             self.label_maker.apply_node_labels()
+            log.info("Node %s labelled successfully", self.get_node_name())
+        else:
+            raise status.ReconcilerError("Failed to apply node labels")
 
+    @status.on_error(ops.WaitingStatus("Waiting to configure ingress controller"))
     def _configure_nginx_ingress_controller(self):
         """Configure nginx-ingress-controller."""
-        if not os.path.exists("/root/.kube/config"):
-            log.info("Waiting for kubeconfig before configuring ingress")
-            return
+        if not ROOT_KUBECONFIG_PATH.exists():
+            raise status.ReconcilerError("kubeconfig needed to configuring ingress controller")
 
         status.add(ops.MaintenanceStatus("Configuring ingress"))
 
-        manifest_dir = "/root/cdk/addons"
-        manifest_path = manifest_dir + "/ingress-daemon-set.yaml"
+        manifest_dir = CDK_DIR_PATH / "addons"
+        manifest_file_name = "ingress-daemon-set.yaml"
+        manifest_path = manifest_dir / manifest_file_name
 
         if self.config["ingress"]:
             image = self.config["nginx-image"]
@@ -199,6 +200,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 "use_forwarded_headers": (
                     "true" if self.config["ingress-use-forwarded-headers"] else "false"
                 ),
+                # NOTE(Hue): The default comes from https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#proxy-real-ip-cidr
+                "proxy_real_ip_cidr": self.config.get("ingress-proxy-real-ip-cidr", "0.0.0.0/0"),
             }
 
             ssl_cert = self.config["ingress-default-ssl-certificate"]
@@ -218,9 +221,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 )
 
             env = Environment(loader=FileSystemLoader("templates"))
-            template = env.get_template("ingress-daemon-set.yaml")
+            template = env.get_template(manifest_file_name)
             output = template.render(context)
-            os.makedirs(manifest_dir, exist_ok=True)
+            manifest_dir.mkdir(exist_ok=True)
             with open(manifest_path, "w") as f:
                 f.write(output)
             kubectl("apply", "-f", manifest_path)
@@ -231,38 +234,33 @@ class KubernetesWorkerCharm(ops.CharmBase):
             self.unit.close_port("tcp", 80)
             self.unit.close_port("tcp", 443)
 
-            if os.path.exists(manifest_path):
+            if manifest_path.exists():
                 kubectl("delete", "--ignore-not-found", "-f", manifest_path)
-                os.remove(manifest_path)
+                manifest_path.unlink()
 
+    @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _create_kubeconfigs(self, event):
         """Generate kubeconfig files for the cluster components."""
-        status.add(ops.MaintenanceStatus("Generating Kubeconfig"))
-        ca = self.certificates.ca
-        if not ca:
-            status.add(ops.WaitingStatus("Waiting for certificates"))
-            return
-
+        if not self.certificates.ca:
+            raise status.ReconcilerError("CA Certificate not ready")
         if not self._check_kubecontrol_integration(event):
-            return
+            raise status.ReconcilerError("kube-control not ready")
 
         node_user = f"system:node:{self.get_node_name()}"
         credentials = self.kube_control.get_auth_credentials(node_user)
-        if not credentials:
-            status.add(ops.WaitingStatus("Waiting for kube-control credentials"))
-            return False
-
         servers = self.kube_control.get_api_endpoints()
+        if not credentials:
+            raise status.ReconcilerError("Credentials not ready")
         if not servers:
-            status.add(ops.WaitingStatus("Waiting for API endpoints URLs"))
-            return
+            raise status.ReconcilerError("API servers not ready")
 
+        status.add(ops.MaintenanceStatus("Generating KubeConfig"))
         server = servers[self._get_unit_number() % len(servers)]
 
         # Create K8s config in the default location for Ubuntu.
         kubernetes_snaps.create_kubeconfig(
             dest=str(UBUNTU_KUBECONFIG_PATH),
-            ca=ca,
+            ca=self.certificates.ca,
             server=server,
             user="ubuntu",
             token=credentials.get("client_token"),
@@ -270,7 +268,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         # Create K8s config in the default location for root.
         kubernetes_snaps.create_kubeconfig(
             dest=str(ROOT_KUBECONFIG_PATH),
-            ca=ca,
+            ca=self.certificates.ca,
             server=server,
             user="root",
             token=credentials.get("client_token"),
@@ -278,14 +276,14 @@ class KubernetesWorkerCharm(ops.CharmBase):
         # Create K8s config for kubelet and kube-proxy.
         kubernetes_snaps.create_kubeconfig(
             dest=str(KUBELET_KUBECONFIG_PATH),
-            ca=ca,
+            ca=self.certificates.ca,
             server=server,
             user="kubelet",
             token=credentials.get("kubelet_token"),
         )
         kubernetes_snaps.create_kubeconfig(
             dest=str(KUBEPROXY_KUBECONFIG_PATH),
-            ca=ca,
+            ca=self.certificates.ca,
             server=server,
             user="kube-proxy",
             token=credentials.get("proxy_token"),
@@ -313,7 +311,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
     @status.on_error(ops.WaitingStatus("Waiting for cluster name"))
     def get_cluster_name(self) -> str:
         """Get the cluster name from the kube-control relation."""
-        assert self.kube_control.is_ready
+        if not self.kube_control.is_ready:
+            raise status.ReconcilerError("kube-control not ready")
         return self.kube_control.get_cluster_tag()
 
     def get_node_name(self) -> str:
@@ -321,20 +320,13 @@ class KubernetesWorkerCharm(ops.CharmBase):
         fqdn = self.external_cloud_provider.name == "aws" and self.external_cloud_provider.has_xcp
         return kubernetes_snaps.get_node_name(fqdn=fqdn)
 
+    @status.on_error(ops.BlockedStatus("cni-plugins resource missing or invalid"))
     def _install_cni_binaries(self):
         try:
             resource_path = self.model.resources.fetch("cni-plugins")
-        except ops.ModelError:
-            message = "Something went wrong when claiming 'cni-plugins' resource."
-            status.add(ops.BlockedStatus(message))
-            log.exception(message)
-            return
-
-        except NameError:
-            message = "Resource 'cni-plugins' not found."
-            status.add(message)
-            log.exception(message)
-            return
+        except (ops.ModelError, NameError):
+            log.error("Something went wrong when claiming 'cni-plugins' resource.")
+            raise
 
         unpack_path = Path("/opt/cni/bin")
         unpack_path.mkdir(parents=True, exist_ok=True)
@@ -343,7 +335,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         try:
             subprocess.check_call(shlex.split(command))
         except CalledProcessError:
-            log.exception("Failed to extract 'cni-plugins:'")
+            log.error("Failed to extract 'cni-plugins'")
+            raise
 
         log.info(f"Extracted 'cni-plugins' to {unpack_path}")
 
@@ -365,13 +358,14 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     @status.on_error(ops.WaitingStatus("Waiting for COS token"))
     def _request_monitoring_token(self, event):
-        status.add(ops.MaintenanceStatus("Requesting COS token"))
         if not self._check_tokens_integration(event):
             return
 
+        status.add(ops.MaintenanceStatus("Requesting COS token"))
         cos_user = f"system:cos:{self.get_node_name()}"
         self.tokens.request_token(cos_user, OBSERVABILITY_GROUP)
-        assert not self.tokens.in_flight_requests()
+        if self.tokens.in_flight_requests():
+            raise status.ReconcilerError("Token request in flight")
 
     def reconcile(self, event):
         """Reconcile state changing events."""
@@ -389,16 +383,18 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kubelet(event)
         self._configure_kubeproxy(event)
         self._configure_nginx_ingress_controller()
-        self._configure_labels()
+        self._apply_node_labels()
         self.ingress_proxy.configure(port=80)
         self.cloud_integration.integrate(event)
+        self.update_status(event)
 
+    @status.on_error(ops.WaitingStatus("Waiting for certificate authority"))
     def _request_certificates(self):
         """Request client and server certificates."""
+        if not self.certificates.ca:
+            raise status.ReconcilerError("CA Certificate not ready")
+
         status.add(ops.MaintenanceStatus("Requesting certificates"))
-        if not self.certificates.relation:
-            status.add(ops.BlockedStatus("Missing integration to certificate authority."))
-            return
 
         bind_addrs = kubernetes_snaps.get_bind_addresses()
         common_name = kubernetes_snaps.get_public_address()
@@ -416,20 +412,21 @@ class KubernetesWorkerCharm(ops.CharmBase):
         """
         self._set_workload_version()
 
+    @status.on_error(ops.WaitingStatus("Waiting for certificates"))
     def _write_certificates(self):
         """Write certificates from the certificates relation."""
-        status.add(ops.MaintenanceStatus("Writing certificates"))
-
         common_name = kubernetes_snaps.get_public_address()
         ca = self.certificates.ca
         server_cert = self.certificates.server_certs_map.get(common_name)
         client_cert = self.certificates.client_certs_map.get("system:kubelet")
+        if not ca:
+            raise status.ReconcilerError("CA Certificate not ready")
+        if not client_cert:
+            raise status.ReconcilerError("Client Cert not ready")
+        if not server_cert:
+            raise status.ReconcilerError("Server Cert not ready")
 
-        if not ca or not server_cert or not client_cert:
-            status.add(ops.WaitingStatus("Waiting for certificates"))
-            log.info("Certificates are not yet available.")
-            return
-
+        status.add(ops.MaintenanceStatus("Writing certificates"))
         kubernetes_snaps.write_certificates(
             ca=ca,
             client_cert=client_cert.cert,

@@ -34,6 +34,7 @@ metadata:
     cdk-{{ juju_application }}-ingress: "true"
 data:
   use-forwarded-headers: "{{ use_forwarded_headers }}"
+  proxy-real-ip-cidr: "{{ proxy_real_ip_cidr }}"
 
 ---
 kind: ConfigMap
@@ -230,6 +231,21 @@ rules:
     verbs:
       - create
       - patch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    resourceNames:
+      - ingress-controller-leader
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
