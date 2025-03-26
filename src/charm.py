@@ -186,7 +186,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             image = self.config["nginx-image"]
             if image == "" or image == "auto":
                 registry = self.kube_control.get_registry_location() or "registry.k8s.io"
-                image = f"{registry}/ingress-nginx/controller:v1.11.2"
+                image = f"{registry}/ingress-nginx/controller:v1.11.5"
 
             context = {
                 "daemonset_api_version": "apps/v1",
