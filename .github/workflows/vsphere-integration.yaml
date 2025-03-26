@@ -21,9 +21,9 @@ jobs:
         with:
           provider: vsphere
           juju-channel: 3/stable
-          charmcraft-channel: ${{ steps.charmcraft.outputs.channel }}
           credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
           clouds-yaml: ${{ secrets.CLOUDS_YAML }}
+          charmcraft-channel: ${{ steps.charmcraft.outputs.channel }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
           bootstrap-options: >-
             ${{ secrets.JAMMY_BOOTSTRAP_OPTIONS }}
