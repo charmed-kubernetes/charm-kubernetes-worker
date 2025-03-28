@@ -839,7 +839,7 @@ def render_and_launch_ingress():
             context["ingress_image"] = "/".join(
                 [
                     registry_location or "registry.k8s.io",
-                    "ingress-nginx/controller:v1.6.4",
+                    "ingress-nginx/controller:v1.11.5",
                 ]
             )
 
