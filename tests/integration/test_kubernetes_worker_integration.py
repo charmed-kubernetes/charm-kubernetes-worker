@@ -24,8 +24,11 @@ def _check_status_messages(ops_test):
 
 @pytest.mark.abort_on_fail
 async def test_build_and_deploy(ops_test, series: str):
-    log.info("Build Charm...")
-    charm = await ops_test.build_charm(".")
+    charm = next(Path().glob("kubernetes-worker*.charm"), None)
+    channel = "1.28/stable"
+    if not charm:
+        log.info("Building charm")
+        charm = await ops_test.build_charm(".")
 
     build_script = Path.cwd() / "build-cni-resources.sh"
     resources = await ops_test.build_resources(build_script, with_sudo=False)
@@ -34,17 +37,19 @@ async def test_build_and_deploy(ops_test, series: str):
     if resources and all(rsc.stem in expected_resources for rsc in resources):
         resources = {rsc.stem.replace("-", "_"): rsc for rsc in resources}
     else:
-        log.info("Failed to build resources, downloading from latest/edge")
+        log.info("Failed to build resources, downloading from %s", channel)
         arch_resources = ops_test.arch_specific_resources(charm)
-        resources = await ops_test.download_resources(charm, resources=arch_resources)
+        resources = await ops_test.download_resources(
+            charm, resources=arch_resources, channel=channel
+        )
         resources = {name.replace("-", "_"): rsc for name, rsc in resources.items()}
 
     assert resources, "Failed to build or download charm resources."
 
     log.info("Build Bundle...")
-    context = dict(charm=charm, series=series, **resources)
+    context = dict(charm=charm.resolve(), series=series, **resources)
     overlays = [
-        ops_test.Bundle("kubernetes-core", channel="1.28/stable"),
+        ops_test.Bundle("kubernetes-core", channel=channel),
         Path("tests/data/charm.yaml"),
     ]
     bundle, *overlays = await ops_test.async_render_bundles(*overlays, **context)
