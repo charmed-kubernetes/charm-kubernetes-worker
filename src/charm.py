@@ -24,13 +24,14 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
+from jinja2 import Environment, FileSystemLoader
+from ops.interface_kube_control import KubeControlRequirer
+from ops.interface_tls_certificates import CertificatesRequires
+
 from cloud_integration import CloudIntegration
 from cos_integration import COSIntegration
 from http_provides import HttpProvides
-from jinja2 import Environment, FileSystemLoader
 from kubectl import kubectl
-from ops.interface_kube_control import KubeControlRequirer
-from ops.interface_tls_certificates import CertificatesRequires
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +102,13 @@ class KubernetesWorkerCharm(ops.CharmBase):
     @status.on_error(ops.WaitingStatus("Waiting on CNI"))
     def _configure_cni(self):
         """Configure the CNI integration databag."""
+        ignore_missing_cni = self.model.config["ignore-missing-cni"]
+        if not self.cni.default_relation:
+            if not ignore_missing_cni:
+                raise status.ReconcilerError("CNI relation not established")
+            log.info("Ignoring missing CNI configuration as per user request.")
+
+        status.add(ops.MaintenanceStatus("Configuring CNI"))
         registry = self.kube_control.get_registry_location()
         if registry:
             self.cni.set_image_registry(registry)
