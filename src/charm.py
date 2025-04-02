@@ -5,7 +5,6 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
-import os
 import shlex
 import subprocess
 from base64 import b64encode
@@ -39,8 +38,9 @@ log = logging.getLogger(__name__)
 
 ROOT_KUBECONFIG_PATH = Path("/root/.kube/config")
 UBUNTU_KUBECONFIG_PATH = Path("/home/ubuntu/.kube/config")
-KUBELET_KUBECONFIG_PATH = Path("/root/cdk/kubeconfig")
-KUBEPROXY_KUBECONFIG_PATH = Path("/root/cdk/kubeproxyconfig")
+CDK_DIR_PATH = Path("/root/cdk")
+KUBELET_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeconfig"
+KUBEPROXY_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeproxyconfig"
 
 OBSERVABILITY_GROUP = "system:cos"
 
@@ -109,8 +109,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
     @status.on_error(ops.BlockedStatus("Missing CNI Integration"))
     def _configure_cni(self):
         """Configure the CNI integration databag."""
-        if not (self.cni and self.cni.default_relation):
-            raise status.ReconcilerError("CNI relation not established")
+        ignore_missing_cni = self.model.config["ignore-missing-cni"]
+        if not self.cni.default_relation:
+            if not ignore_missing_cni:
+                raise status.ReconcilerError("CNI relation not established")
+            log.info("Ignoring missing CNI configuration as per user request.")
+
         status.add(ops.MaintenanceStatus("Configuring CNI"))
         registry = self.kube_control.get_registry_location()
         self.cni.set_image_registry(registry)
@@ -186,14 +190,15 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         status.add(ops.MaintenanceStatus("Configuring ingress"))
 
-        manifest_dir = "/root/cdk/addons"
-        manifest_path = manifest_dir + "/ingress-daemon-set.yaml"
+        manifest_dir = CDK_DIR_PATH / "addons"
+        manifest_file_name = "ingress-daemon-set.yaml"
+        manifest_path = manifest_dir / manifest_file_name
 
         if self.config["ingress"]:
             image = self.config["nginx-image"]
             if image == "" or image == "auto":
                 registry = self.kube_control.get_registry_location() or "registry.k8s.io"
-                image = f"{registry}/ingress-nginx/controller:v1.11.2"
+                image = f"{registry}/ingress-nginx/controller:v1.11.5"
 
             context = {
                 "daemonset_api_version": "apps/v1",
@@ -206,6 +211,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 "use_forwarded_headers": (
                     "true" if self.config["ingress-use-forwarded-headers"] else "false"
                 ),
+                # NOTE(Hue): The default comes from https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#proxy-real-ip-cidr
+                "proxy_real_ip_cidr": self.config.get("ingress-proxy-real-ip-cidr", "0.0.0.0/0"),
             }
 
             ssl_cert = self.config["ingress-default-ssl-certificate"]
@@ -225,9 +232,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 )
 
             env = Environment(loader=FileSystemLoader("templates"))
-            template = env.get_template("ingress-daemon-set.yaml")
+            template = env.get_template(manifest_file_name)
             output = template.render(context)
-            os.makedirs(manifest_dir, exist_ok=True)
+            manifest_dir.mkdir(exist_ok=True)
             with open(manifest_path, "w") as f:
                 f.write(output)
             kubectl("apply", "-f", manifest_path)
@@ -238,9 +245,9 @@ class KubernetesWorkerCharm(ops.CharmBase):
             self.unit.close_port("tcp", 80)
             self.unit.close_port("tcp", 443)
 
-            if os.path.exists(manifest_path):
+            if manifest_path.exists():
                 kubectl("delete", "--ignore-not-found", "-f", manifest_path)
-                os.remove(manifest_path)
+                manifest_path.unlink()
 
     @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _create_kubeconfigs(self, event):

@@ -4,6 +4,12 @@ options:
     default: "latest/edge"
     description: |
       Snap channel to install Kubernetes worker services from
+  ignore-missing-cni:
+    type: boolean
+    default: false
+    description: |
+      If ignore-missing-cni is set to true, the charm will not enter a blocked state if a CNI has not been configured/provided via relation.
+      If ignore-missing-cni is set to false, and a CNI has not been configured/provided via relation, then the charm will enter a blocked state with the message: "Missing CNI relation or config".
   ingress:
     type: boolean
     default: true
@@ -58,6 +64,22 @@ options:
 
       Reference: https://github.com/kubernetes/ingress-nginx/blob/a9c706be12a8be418c49ab1f60a02f52f9b14e55/
       docs/user-guide/nginx-configuration/configmap.md#use-forwarded-headers.
+  ingress-proxy-real-ip-cidr:
+    type: string
+    default: "0.0.0.0/0"
+    description: |
+      If `ingress-use-forwarded-headers` is enabled, `ingress-proxy-real-ip-cidr` defines 
+      the default IP/network address of your external load balancer. Can be a comma-separated 
+      list of CIDR blocks.
+
+      By default NGINX uses the content of the header `X-Forwarded-For` as the source of truth 
+      to get information about the client IP address. This works without issues in L7 if we 
+      configure the setting `ingress-proxy-real-ip-cidr` with the correct information of the IP/network 
+      address of trusted external load balancer.
+
+      References:
+        - https://kubernetes.github.io/ingress-nginx/user-guide/miscellaneous/#source-ip-address
+        - https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#proxy-real-ip-cidr
   kubelet-extra-args:
     type: string
     default: ""
