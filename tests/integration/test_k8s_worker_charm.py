@@ -58,13 +58,15 @@ def test_status(ops_test):
 
 
 async def get_nodes(k8s):
-    """Get list of Nodes.
+    """
+    Get list of Nodes.
 
     Args:
         k8s: any k8s unit
 
     Returns:
         list of nodes
+
     """
     action = await k8s.run("kubectl --kubeconfig=/root/.kube/config get nodes -o json")
     result = await action.wait()

@@ -10,7 +10,8 @@ log = logging.getLogger(__name__)
 
 @retry(stop=stop_after_delay(60), wait=wait_exponential())
 def kubectl(*args):
-    """Run a kubectl cli command with a config file.
+    """
+    Run a kubectl cli command with a config file.
 
     Returns stdout and throws an error if the command fails.
     """

@@ -16,7 +16,8 @@ log = logging.getLogger(__name__)
 
 
 class CloudIntegration:
-    """Utility class that handles the integration with clouds for Charmed Kubernetes.
+    """
+    Utility class that handles the integration with clouds for Charmed Kubernetes.
 
     This class provides methods to configure instance tags and roles for control-plane
     units
@@ -26,6 +27,7 @@ class CloudIntegration:
         aws (AWSIntegrationRequires): Reference to relation integration
         gcp (GCPIntegrationRequires): Reference to relation integration
         azure (AzureIntegrationRequires): Reference to relation integration
+
     """
 
     def __init__(self, charm: ops.CharmBase) -> None:

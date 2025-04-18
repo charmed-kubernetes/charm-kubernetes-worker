@@ -42,7 +42,8 @@ def harness():
 
 @pytest.fixture
 def charm_environment(request, harness: Harness[KubernetesWorkerCharm]):
-    """Create a charm with mocked methods.
+    """
+    Create a charm with mocked methods.
 
     This fixture utilizes ExitStack to dynamically mock methods in the Kubernetes Worker Charm,
     using the request markers defined in the `pytest_configure` method.

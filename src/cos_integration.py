@@ -14,7 +14,8 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class JobConfig:
-    """Data class representing the configuration for a Prometheus scrape job.
+    """
+    Data class representing the configuration for a Prometheus scrape job.
 
     Attributes:
         name (str): The name of the scrape job. Corresponds to the name of the Kubernetes
@@ -25,6 +26,7 @@ class JobConfig:
         target (str): The network address of the target component along with the port.
                       Format is 'hostname:port' (e.g., 'localhost:6443').
         relabel_configs (List[Dict[str, str]]): Additional configurations for relabeling.
+
     """
 
     name: str
@@ -35,7 +37,8 @@ class JobConfig:
 
 
 class COSIntegration:
-    """Utility class that handles the integration with COS.
+    """
+    Utility class that handles the integration with COS.
 
     This class provides methods to retrieve and configure Prometheus metrics
     scraping endpoints based on the Kubernetes components running within
@@ -43,20 +46,24 @@ class COSIntegration:
 
     Attributes:
         charm (CharmBase): Reference to the base charm instance.
+
     """
 
     def __init__(self, charm: CharmBase) -> None:
-        """Initialize a COSIntegration instance.
+        """
+        Initialize a COSIntegration instance.
 
         Args:
             charm (CharmBase): A charm object representing the current charm.
+
         """
         self.charm = charm
 
     def _create_scrape_job(
         self, config: JobConfig, node_name: str, token: str, cluster_name: str
     ) -> Dict:
-        """Create a scrape job configuration.
+        """
+        Create a scrape job configuration.
 
         Args:
             config (JobConfig): The configuration for the scrape job.
@@ -66,6 +73,7 @@ class COSIntegration:
 
         Returns:
             Dict: The scrape job configuration.
+
         """
         return {
             "tls_config": {"insecure_skip_verify": True},
@@ -86,7 +94,8 @@ class COSIntegration:
         }
 
     def get_metrics_endpoints(self, node_name: str, token: str, cluster_name: str) -> List[Dict]:
-        """Retrieve Prometheus scrape job configurations for Kubernetes components.
+        """
+        Retrieve Prometheus scrape job configurations for Kubernetes components.
 
         Args:
             node_name (str): The name of the node.
@@ -95,6 +104,7 @@ class COSIntegration:
 
         Returns:
             List[Dict]: A list of Prometheus scrape job configurations.
+
         """
         log.info("Building Prometheus scraping jobs.")
 
