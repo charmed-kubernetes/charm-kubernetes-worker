@@ -102,8 +102,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
     @status.on_error(ops.BlockedStatus("Missing CNI Integration"))
     def _configure_cni(self):
         """Configure the CNI integration databag."""
-        if not (self.cni and self.cni.default_relation):
-            raise status.ReconcilerError("CNI relation not established")
+        ignore_missing_cni = self.model.config["ignore-missing-cni"]
+        if not self.cni.default_relation:
+            if not ignore_missing_cni:
+                raise status.ReconcilerError("CNI relation not established")
+            log.info("Ignoring missing CNI configuration as per user request.")
+
         status.add(ops.MaintenanceStatus("Configuring CNI"))
         registry = self.kube_control.get_registry_location()
         self.cni.set_image_registry(registry)
@@ -187,7 +191,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             image = self.config["nginx-image"]
             if image == "" or image == "auto":
                 registry = self.kube_control.get_registry_location() or "registry.k8s.io"
-                image = f"{registry}/ingress-nginx/controller:v1.11.2"
+                image = f"{registry}/ingress-nginx/controller:v1.11.5"
 
             context = {
                 "daemonset_api_version": "apps/v1",
