@@ -1,0 +1,9 @@
+.tox/
+/venv
+*.py[cod]
+*.charm
+.flake8
+tests
+tox.ini
+CONTRIBUTING.md
+*.tar.gz

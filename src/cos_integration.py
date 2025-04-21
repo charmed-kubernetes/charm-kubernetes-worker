@@ -25,6 +25,7 @@ class JobConfig:
         target (str): The network address of the target component along with the port.
                       Format is 'hostname:port' (e.g., 'localhost:6443').
         relabel_configs (List[Dict[str, str]]): Additional configurations for relabeling.
+
     """
 
     name: str
@@ -43,6 +44,7 @@ class COSIntegration:
 
     Attributes:
         charm (CharmBase): Reference to the base charm instance.
+
     """
 
     def __init__(self, charm: CharmBase) -> None:
@@ -50,6 +52,7 @@ class COSIntegration:
 
         Args:
             charm (CharmBase): A charm object representing the current charm.
+
         """
         self.charm = charm
 
@@ -66,6 +69,7 @@ class COSIntegration:
 
         Returns:
             Dict: The scrape job configuration.
+
         """
         return {
             "tls_config": {"insecure_skip_verify": True},
@@ -95,6 +99,7 @@ class COSIntegration:
 
         Returns:
             List[Dict]: A list of Prometheus scrape job configurations.
+
         """
         log.info("Building Prometheus scraping jobs.")
 

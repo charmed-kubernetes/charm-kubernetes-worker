@@ -47,7 +47,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
 
     def __init__(self, *args):
-        """Start entrypoint for Kubernetes Worker!"""
+        """Entrypoint for Kubernetes Worker."""
         super().__init__(*args)
         self.certificates = CertificatesRequires(self, endpoint="certificates")
         self.cni = KubernetesCniProvides(self, endpoint="cni", default_cni="")
