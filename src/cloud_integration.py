@@ -16,8 +16,7 @@ log = logging.getLogger(__name__)
 
 
 class CloudIntegration:
-    """
-    Utility class that handles the integration with clouds for Charmed Kubernetes.
+    """Utility class that handles the integration with clouds for Charmed Kubernetes.
 
     This class provides methods to configure instance tags and roles for control-plane
     units

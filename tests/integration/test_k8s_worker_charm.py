@@ -58,8 +58,7 @@ def test_status(ops_test):
 
 
 async def get_nodes(k8s):
-    """
-    Get list of Nodes.
+    """Get list of Nodes.
 
     Args:
         k8s: any k8s unit

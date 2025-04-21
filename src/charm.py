@@ -409,8 +409,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.certificates.request_client_cert("system:kubelet")
 
     def update_status(self, _event):
-        """
-        Handle the update status hook event.
+        """Handle the update status hook event.
 
         Changes to the unit.status shouldn't be triggered
         here, but any periodic health events may be performed.

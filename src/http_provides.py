@@ -24,8 +24,7 @@ class HttpProvides:
     def get_ingress_address(
         self, relation: ops.Relation = None
     ) -> Optional[Union[str, List[str]]]:
-        """
-        Resolve the ingress address from the relation.
+        """Resolve the ingress address from the relation.
 
         If no relation is provided, we fallback to the first one
         """
@@ -35,8 +34,7 @@ class HttpProvides:
         return unit_data.get("ingress-address") or unit_data.get("private-address")
 
     def configure(self, port, private_address=None, hostname=None):
-        """
-        Configure the address(es).
+        """Configure the address(es).
 
         Private_address and hostname can be None, a single string address/hostname,
         or a list of addresses and hostnames. Note that if a list is passed,
