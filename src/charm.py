@@ -149,7 +149,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             container_runtime_endpoint=self.container_runtime.socket,
             dns_domain=dns.get("domain"),
             dns_ip=dns.get("sdn-ip"),
-            extra_args_config=self.model.config.get("kubelet-extra-args"),
+            extra_args_config=self.service_extra_args("kubelet", "kubelet-extra-args"),
             extra_config=yaml.safe_load(self.model.config.get("kubelet-extra-config")),
             external_cloud_provider=self.external_cloud_provider,
             kubeconfig=str(KUBELET_KUBECONFIG_PATH),
@@ -157,6 +157,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
             registry=self.kube_control.get_registry_location(),
             taints=None,
         )
+
+    def service_extra_args(self, service_name, config_key) -> str:
+        """Craft the extra args for the service."""
+        extra_args = kubernetes_snaps.parse_extra_args(self.model.config[config_key])
+        args = self.cis_benchmark.craft_extra_args(service_name, extra_args)
+        return " ".join(f"{k}={v}" for k, v in args.items())
 
     @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _configure_kubeproxy(self, event):
