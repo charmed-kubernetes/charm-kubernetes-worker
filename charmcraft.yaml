@@ -1,38 +1,298 @@
+# Copyright 2024 Canonical, Ltd.
+# See LICENSE file for licensing details.
+
 type: charm
+name: kubernetes-worker
+summary: The workload bearing units of a Kubernetes cluster.
+description: |
+  Kubernetes is an open-source platform for deploying, scaling, and operations
+  of application containers across a cluster of hosts. Kubernetes is portable
+  in that it works with public, private, and hybrid clouds. Extensible through
+  a pluggable infrastructure. Self healing in that it will automatically
+  restart and place containers on healthy nodes if a node ever goes away.
+links:
+  contact:
+    - Kevin Monroe <kevin.monroe@canonical.com>
+    - Mateo Florido <mateo.florido@canonical.com>
+    - Adam Dyess <adam.dyess@canonical.com>
+  documentation: https://discourse.charmhub.io/t/kubernetes-worker-docs-index/6104
+  source: https://github.com/charmed-kubernetes/charm-kubernetes-worker
+  issues:
+    - https://bugs.launchpad.net/charm-kubernetes-worker
+
+assumes:
+  - juju >= 3.1
+
+config:
+  options:
+    channel:
+      type: string
+      default: "latest/edge"
+      description: |
+        Snap channel to install Kubernetes worker services from
+    ignore-missing-cni:
+      type: boolean
+      default: false
+      description: |
+        If ignore-missing-cni is set to true, the charm will not enter a blocked state if a CNI has not been configured/provided via relation.
+        If ignore-missing-cni is set to false, and a CNI has not been configured/provided via relation, then the charm will enter a blocked state with the message: "Missing CNI relation or config".
+    ingress:
+      type: boolean
+      default: true
+      description: |
+        Deploy nginx-ingress-controller to handle Ingress resources. When set to
+        true, the unit will open ports 80 and 443 to make the nginx-ingress-controller
+        endpoint accessible.
+    ingress-default-ssl-certificate:
+      type: string
+      default: ""
+      description: |
+        SSL certificate to be used by the default HTTPS server. If one of the
+        flag ingress-default-ssl-certificate or ingress-default-ssl-key is not
+        provided ingress will use a self-signed certificate. This parameter is
+        specific to nginx-ingress-controller.
+    ingress-default-ssl-key:
+      type: string
+      default: ""
+      description: |
+        Private key to be used by the default HTTPS server. If one of the flag
+        ingress-default-ssl-certificate or ingress-default-ssl-key is not
+        provided ingress will use a self-signed certificate. This parameter is
+        specific to nginx-ingress-controller.
+    ingress-ssl-chain-completion:
+      type: boolean
+      default: false
+      description: |
+        Enable chain completion for TLS certificates used by the nginx ingress
+        controller.  Set this to true if you would like the ingress controller
+        to attempt auto-retrieval of intermediate certificates.  The default
+        (false) is recommended for all production kubernetes installations, and
+        any environment which does not have outbound Internet access.
+    ingress-ssl-passthrough:
+      type: boolean
+      default: false
+      description: |
+        Enable ssl passthrough on ingress server. This allows passing the ssl
+        connection through to the workloads and not terminating it at the ingress
+        controller.
+    ingress-use-forwarded-headers:
+      type: boolean
+      default: false
+      description: |
+        If true, NGINX passes the incoming X-Forwarded-* headers to upstreams. Use this
+        option when NGINX is behind another L7 proxy / load balancer that is setting
+        these headers.
+
+        If false, NGINX ignores incoming X-Forwarded-* headers, filling them with the
+        request information it sees. Use this option if NGINX is exposed directly to
+        the internet, or it's behind a L3/packet-based load balancer that doesn't alter
+        the source IP in the packets.
+
+        Reference: https://github.com/kubernetes/ingress-nginx/blob/a9c706be12a8be418c49ab1f60a02f52f9b14e55/docs/user-guide/nginx-configuration/configmap.md#use-forwarded-headers.
+        docs/user-guide/nginx-configuration/configmap.md#use-forwarded-headers.
+    ingress-proxy-real-ip-cidr:
+      type: string
+      default: "0.0.0.0/0"
+      description: |
+        If `ingress-use-forwarded-headers` is enabled, `ingress-proxy-real-ip-cidr` defines
+        the default IP/network address of your external load balancer. Can be a comma-separated
+        list of CIDR blocks.
+
+        By default NGINX uses the content of the header `X-Forwarded-For` as the source of truth
+        to get information about the client IP address. This works without issues in L7 if we
+        configure the setting `ingress-proxy-real-ip-cidr` with the correct information of the IP/network
+        address of trusted external load balancer.
+
+        References:
+          - https://kubernetes.github.io/ingress-nginx/user-guide/miscellaneous/#source-ip-address
+          - https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#proxy-real-ip-cidr
+    kubelet-extra-args:
+      type: string
+      default: ""
+      description: |
+        Space separated list of flags and key=value pairs that will be passed as arguments to
+        kubelet. For example a value like this:
+          runtime-config=batch/v2alpha1=true profiling=true
+        will result in kubelet being run with the following options:
+          --runtime-config=batch/v2alpha1=true --profiling=true
+    kubelet-extra-config:
+      default: "{}"
+      type: string
+      description: |
+        Extra configuration to be passed to kubelet. Any values specified in this
+        config will be merged into a KubeletConfiguration file that is passed to
+        the kubelet service via the --config flag. This can be used to override
+        values provided by the charm.
+
+        The value for this config must be a YAML mapping that can be safely
+        merged with a KubeletConfiguration file. For example:
+          {evictionHard: {memory.available: 200Mi}}
+
+        For more information about KubeletConfiguration, see upstream docs:
+        https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/
+    labels:
+      type: string
+      default: ""
+      description: |
+        Labels can be used to organize and to select subsets of nodes in the
+        cluster. Declare node labels in key=value format, separated by spaces.
+    nginx-image:
+      type: string
+      default: "auto"
+      description: |
+        Container image to use for the nginx ingress controller. Using "auto" will select
+        an image based on architecture.
+
+        Example:
+          quay.io/kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.32.0
+    proxy-extra-args:
+      type: string
+      default: ""
+      description: |
+        Space separated list of flags and key=value pairs that will be passed as arguments to
+        kube-proxy. For example a value like this:
+          runtime-config=batch/v2alpha1=true profiling=true
+        will result in kube-apiserver being run with the following options:
+          --runtime-config=batch/v2alpha1=true --profiling=true
+    proxy-extra-config:
+      default: "{}"
+      type: string
+      description: |
+        Extra configuration to be passed to kube-proxy. Any values specified in
+        this config will be merged into a KubeProxyConfiguration file that is
+        passed to the kube-proxy service via the --config flag. This can be used
+        to override values provided by the charm.
+
+        The value for this config must be a YAML mapping that can be safely
+        merged with a KubeProxyConfiguration file. For example:
+          {mode: ipvs, ipvs: {strictARP: true}}
+
+        For more information about KubeProxyConfiguration, see upstream docs:
+        https://kubernetes.io/docs/reference/config-api/kube-proxy-config.v1alpha1/
+    sysctl:
+      type: string
+      default: "{net.ipv4.conf.all.forwarding: 1, net.ipv4.conf.all.rp_filter: 1, net.ipv4.neigh.default.gc_thresh1: 128, net.ipv4.neigh.default.gc_thresh2: 28672, net.ipv4.neigh.default.gc_thresh3: 32768, net.ipv6.neigh.default.gc_thresh1: 128, net.ipv6.neigh.default.gc_thresh2: 28672, net.ipv6.neigh.default.gc_thresh3: 32768, fs.inotify.max_user_instances: 8192, fs.inotify.max_user_watches: 1048576, kernel.panic: 10, kernel.panic_on_oops: 1, vm.overcommit_memory: 1}"
+      description: |
+        YAML formatted associative array of sysctl values, e.g.:
+        '{kernel.pid_max: 4194303}'. Note that kube-proxy handles
+        the conntrack settings. The proper way to alter them is to
+        use the proxy-extra-args config to set them, e.g.:
+          juju config kubernetes-control-plane proxy-extra-args="conntrack-min=1000000 conntrack-max-per-core=250000"
+          juju config kubernetes-worker proxy-extra-args="conntrack-min=1000000 conntrack-max-per-core=250000"
+        The proxy-extra-args conntrack-min and conntrack-max-per-core can be set to 0 to ignore
+        kube-proxy's settings and use the sysctl settings instead. Note the fundamental difference between
+        the setting of conntrack-max-per-core vs nf_conntrack_max.
+
+actions:
+  cis-benchmark:
+    description: |-
+      Run the CIS Kubernetes Benchmark against snap-based components.
+    params:
+      apply:
+        type: string
+        default": none
+        description: |-
+          Apply remedies to address benchmark failures. The default, 'none',
+          will not attempt to fix any reported failures. Set to 'conservative'
+          to resolve simple failures. Set to 'dangerous' to attempt to resolve
+          all failures.
+
+          Note: Applying any remediation may result in an unusable cluster.
+      config:
+        type: string
+        default: https://github.com/charmed-kubernetes/kube-bench-config/archive/cis-1.23.zip#sha1=3cda2fc68b4ca36f69f5913bfc0b02576e7a3b3d
+        description: |-
+          Archive containing configuration files to use when running kube-bench.
+          The default value is known to be compatible with snap components. When
+          using a custom URL, append '#<hash_type>=<checksum>' to verify the
+          archive integrity when downloaded.
+      release:
+        type: string
+        default: https://github.com/aquasecurity/kube-bench/releases/download/v0.6.8/kube-bench_0.6.8_linux_amd64.tar.gz#sha256=5f9c5231949bd022a6993f5297cc05bb80a1b7c36a43cefed0a8c8af26778863
+        description: |-
+          Archive containing the 'kube-bench' binary to run. The default value
+          points to a stable upstream release. When using a custom URL, append
+          '#<hash_type>=<checksum>' to verify the archive integrity when
+          downloaded.
+
+          This may also be set to the special keyword 'upstream'. In this case,
+          the action will compile and use a local kube-bench binary built from
+          the default branch of the upstream repository:
+            https://github.com/aquasecurity/kube-bench
+  upgrade:
+    description: Upgrade the Kubernetes snaps
+
+peers:
+  coordinator:
+    # LP:2049953 needed for upgrading from < 1.29
+    interface: coordinator
+provides:
+  cni:
+    interface: kubernetes-cni
+    scope: container
+  container-runtime:
+    interface: container-runtime
+    scope: container
+  cos-agent:
+    interface: cos_agent
+  ingress-proxy:
+    interface: http
+requires:
+  aws:
+    interface: aws-integration
+  gcp:
+    interface: gcp-integration
+  azure:
+    interface: azure-integration
+  certificates:
+    interface: tls-certificates
+  kube-control:
+    interface: kube-control
+  tokens:
+    interface: tokens
+
+resources:
+  cni-plugins:
+    type: file
+    filename: cni-plugins.tar.gz
+    description: CNI network plugins for Kubernetes
+
 bases:
   - build-on:
     - name: ubuntu
-      channel: "20.04"
+      channel: "22.04"
       architectures: ["amd64"]
     run-on:
     - name: ubuntu
-      channel: "20.04"
+      channel: "22.04"
       architectures: ["amd64"]
     - name: ubuntu
-      channel: "22.04"
+      channel: "24.04"
       architectures: ["amd64"]
   - build-on:
     - name: ubuntu
-      channel: "20.04"
+      channel: "22.04"
       architectures: ["arm64"]
     run-on:
     - name: ubuntu
-      channel: "20.04"
+      channel: "22.04"
       architectures: ["arm64"]
     - name: ubuntu
-      channel: "22.04"
+      channel: "24.04"
       architectures: ["arm64"]
   - build-on:
     - name: ubuntu
-      channel: "20.04"
+      channel: "22.04"
       architectures: ["s390x"]
     run-on:
     - name: ubuntu
-      channel: "20.04"
+      channel: "22.04"
       architectures: ["s390x"]
     - name: ubuntu
-      channel: "22.04"
+      channel: "24.04"
       architectures: ["s390x"]
 parts:
   charm:
+    plugin: charm
+    source: .
     build-packages: [git]

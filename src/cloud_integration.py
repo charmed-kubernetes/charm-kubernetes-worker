@@ -26,6 +26,7 @@ class CloudIntegration:
         aws (AWSIntegrationRequires): Reference to relation integration
         gcp (GCPIntegrationRequires): Reference to relation integration
         azure (AzureIntegrationRequires): Reference to relation integration
+
     """
 
     def __init__(self, charm: ops.CharmBase) -> None:

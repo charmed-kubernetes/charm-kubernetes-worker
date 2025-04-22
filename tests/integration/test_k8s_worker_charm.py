@@ -65,6 +65,7 @@ async def get_nodes(k8s):
 
     Returns:
         list of nodes
+
     """
     action = await k8s.run("kubectl --kubeconfig=/root/.kube/config get nodes -o json")
     result = await action.wait()
