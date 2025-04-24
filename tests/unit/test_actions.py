@@ -30,7 +30,7 @@ def test_upgrade_action_fails(upgrade_snaps: mock.Mock, harness):
     """Verify that the upgrade action runs the upgrade_snap method and reconciles."""
 
     def mock_upgrade(channel, event):
-        assert channel == "latest/edge"
+        assert channel == "1.33/stable"
         status.add(ops.BlockedStatus("snap-upgrade-failed"))
         event.fail("snap upgrade failed")
 

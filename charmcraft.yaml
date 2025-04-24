@@ -27,7 +27,7 @@ config:
   options:
     channel:
       type: string
-      default: "latest/edge"
+      default: "1.33/stable"
       description: |
         Snap channel to install Kubernetes worker services from
     ignore-missing-cni:
