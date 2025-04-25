@@ -27,6 +27,8 @@ from jinja2 import Environment, FileSystemLoader
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
 
+import actions.cis_benchmark
+import actions.upgrade
 from cloud_integration import CloudIntegration
 from cos_integration import COSIntegration
 from http_provides import HttpProvides
@@ -71,9 +73,14 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.label_maker = LabelMaker(self, kubeconfig_path=ROOT_KUBECONFIG_PATH, timeout=30)
         self.cloud_integration = CloudIntegration(self)
         self.tokens = TokensRequirer(self)
+        self.cis_benchmark = actions.cis_benchmark.CISBenchmark(self)
+
         self.reconciler = Reconciler(self, self.reconcile)
+        self.framework.observe(self.on.upgrade_action, self._upgrade_action)
         self.framework.observe(self.on.update_status, self.update_status)
-        self.framework.observe(self.on.upgrade_action, self._on_upgrade_action)
+
+    def _upgrade_action(self, event):
+        return actions.upgrade.upgrade_action(self, event)
 
     def _check_kubecontrol_integration(self, event) -> bool:
         """Check the integration status with kube-control."""
@@ -142,7 +149,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             container_runtime_endpoint=self.container_runtime.socket,
             dns_domain=dns.get("domain"),
             dns_ip=dns.get("sdn-ip"),
-            extra_args_config=self.model.config.get("kubelet-extra-args"),
+            extra_args_config=self.service_extra_args("kubelet", "kubelet-extra-args"),
             extra_config=yaml.safe_load(self.model.config.get("kubelet-extra-config")),
             external_cloud_provider=self.external_cloud_provider,
             kubeconfig=str(KUBELET_KUBECONFIG_PATH),
@@ -150,6 +157,12 @@ class KubernetesWorkerCharm(ops.CharmBase):
             registry=self.kube_control.get_registry_location(),
             taints=None,
         )
+
+    def service_extra_args(self, service_name, config_key) -> str:
+        """Craft the extra args for the service."""
+        extra_args = kubernetes_snaps.parse_extra_args(self.model.config[config_key])
+        args = self.cis_benchmark.craft_extra_args(service_name, extra_args)
+        return " ".join(f"{k}={v}" for k, v in args.items())
 
     @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _configure_kubeproxy(self, event):
@@ -343,15 +356,6 @@ class KubernetesWorkerCharm(ops.CharmBase):
             raise
 
         log.info(f"Extracted 'cni-plugins' to {unpack_path}")
-
-    def _on_upgrade_action(self, event):
-        """Handle the upgrade action."""
-        channel = self.model.config.get("channel")
-        with status.context(self.unit):
-            kubernetes_snaps.upgrade_snaps(channel=channel, event=event)
-        if isinstance(self.unit.status, ops.ActiveStatus):
-            # After successful upgrade, reconcile the charm to ensure it is in the desired state
-            self.reconciler.reconcile(event)
 
     def _request_kubelet_and_proxy_credentials(self):
         """Request authorization for kubelet and kube-proxy."""
