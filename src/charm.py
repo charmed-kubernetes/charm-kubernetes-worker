@@ -406,8 +406,10 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         bind_addrs = kubernetes_snaps.get_bind_addresses()
         common_name = kubernetes_snaps.get_public_address()
+        ingress_ip = kubernetes_snaps.get_ingress_ip()
 
-        sans = sorted(set([common_name, gethostname()] + bind_addrs))
+        sans = sorted(set([common_name, gethostname()] + bind_addrs +
+                          ingress_ip))
 
         self.certificates.request_server_cert(cn=common_name, sans=sans)
         self.certificates.request_client_cert("system:kubelet")
