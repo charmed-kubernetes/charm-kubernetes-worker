@@ -5,6 +5,7 @@
 """Charmed Machine Operator for Kubernetes Worker."""
 
 import logging
+import ipaddress
 import shlex
 import subprocess
 from base64 import b64encode
@@ -44,6 +45,10 @@ KUBEPROXY_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeproxyconfig"
 
 OBSERVABILITY_GROUP = "system:cos"
 
+class DualStackUnspecifiedIPError(Exception):
+    """Exception raised when there is an unspecified IP in a dual stack configuration."""
+
+    ERR = "Unspecified IP in dual stack configuration"
 
 class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
@@ -137,7 +142,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         sysctl = yaml.safe_load(self.model.config.get("sysctl"))
         kubernetes_snaps.configure_kernel_parameters(sysctl)
 
-    @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
+    @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"), status.ReconcilerError)
+    @status.on_error(ops.BlockedStatus(DualStackUnspecifiedIPError.ERR), DualStackUnspecifiedIPError)
     def _configure_kubelet(self, event):
         """Configure kubelet with the configuration parameters."""
         status.add(ops.MaintenanceStatus("Configuring kubelet"))
@@ -153,7 +159,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             extra_config=yaml.safe_load(self.model.config.get("kubelet-extra-config")),
             external_cloud_provider=self.external_cloud_provider,
             kubeconfig=str(KUBELET_KUBECONFIG_PATH),
-            node_ip=self.model.get_binding("kube-control").network.ingress_address.exploded,
+            node_ip=','.join(self._get_node_ip_addresses()),
             registry=self.kube_control.get_registry_location(),
             taints=None,
         )
@@ -456,6 +462,29 @@ class KubernetesWorkerCharm(ops.CharmBase):
             self.unit.set_workload_version(val)
         else:
             self.unit.set_workload_version("")
+
+    def _get_node_ip_addresses(self) -> list[str]:
+        binding = self.model.get_binding("kube-control")
+        addresses = binding.network.ingress_addresses if binding else []
+        uniq = {ipaddress.ip_address(addr) for addr in addresses}
+        sorted_ips = sorted(uniq, key=lambda x: (x.version, x))
+
+        ipv4 = next((ip for ip in sorted_ips if ip.version == 4), None)
+        ipv6 = next((ip for ip in sorted_ips if ip.version == 6), None)
+
+        # Return a list with at most one IPv4 and one IPv6
+        node_ip_addresses = []
+        if ipv4:
+            node_ip_addresses.append(ipv4)
+        if ipv6:
+            node_ip_addresses.append(ipv6)
+
+        # Dual-stack addresses (one IPv6 and one IPv4 address) must not contain unspecified IPs
+        # https://github.com/kubernetes/kubernetes/blob/f6530285a85d6f4280711301613a7d3215a25818/staging/src/k8s.io/component-helpers/node/util/ips.go#L58
+        if len(node_ip_addresses) == 2 and any(addr.is_unspecified for addr in node_ip_addresses):
+            raise DualStackUnspecifiedIPError(f"{node_ip_addresses} contain unspecified IP")
+
+        return [str(addr) for addr in node_ip_addresses]
 
 
 if __name__ == "__main__":  # pragma: nocover
