@@ -45,10 +45,6 @@ KUBEPROXY_KUBECONFIG_PATH = CDK_DIR_PATH / "kubeproxyconfig"
 
 OBSERVABILITY_GROUP = "system:cos"
 
-class DualStackNodeIPError(Exception):
-    """Exception raised when there is an issue obtaining node IP(s) for kubelet in a dual stack configuration."""
-
-
 class KubernetesWorkerCharm(ops.CharmBase):
     """Charmed Operator for Kubernetes Worker."""
 
@@ -416,6 +412,42 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self.certificates.request_server_cert(cn=common_name, sans=sans)
         self.certificates.request_client_cert("system:kubelet")
 
+    def _service_has_failed(self, service):
+        try:
+            output = subprocess.check_output(
+                ["systemctl", "show", "--no-pager", service], stderr=subprocess.STDOUT
+            ).decode("utf-8")
+
+            fields = dict(
+                line.split("=", 1) for line in output.strip().splitlines() if "=" in line
+            )
+
+            active_state = fields.get("ActiveState")
+            result = fields.get("Result")
+            exec_main_status = fields.get("ExecMainStatus")
+            n_restarts = int(fields.get("NRestarts") or -1)
+
+            if active_state == "failed" or result == "exit-code":
+                return (
+                    True,
+                    f"{service} has failed: ActiveState={active_state}, Result={result}",
+                )
+            elif exec_main_status and exec_main_status != "0":
+                return True, f"{service} Non-zero exit: ExecMainStatus={exec_main_status}"
+            elif n_restarts and n_restarts > 10:
+                return True, f"{service} is restarting repeatedly"
+            return False, ""
+        except subprocess.CalledProcessError as e:
+            return True, f"Failed to check {service} status: {e.output.decode('utf-8')}"
+
+    def _check_core_services(self, services):
+        for service in services:
+            log.info(f"checking the status of {service}")
+            has_failed, reason = self._service_has_failed(service)
+            if has_failed:
+                status.add(ops.BlockedStatus(f"{service} has failed: {reason}"))
+                return
+
     def update_status(self, _event):
         """Handle the update status hook event.
 
@@ -423,6 +455,11 @@ class KubernetesWorkerCharm(ops.CharmBase):
         here, but any periodic health events may be performed.
         """
         self._set_workload_version()
+        self._check_core_services(
+            [
+                "snap.kubelet.daemon.service",
+            ]
+        )
 
     @status.on_error(ops.WaitingStatus("Waiting for certificates"))
     def _write_certificates(self):
@@ -465,30 +502,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         binding = self.model.get_binding("kube-control")
         addresses = binding.network.ingress_addresses if binding else []
         uniq = {ipaddress.ip_address(addr) for addr in addresses}
-        sorted_ips = sorted(uniq, key=lambda x: (x.version, x))
-
-        if not (0 < len(sorted_ips) <= 2):
-            log.error(
-                "node-ips must contain either a single IP or a dual-stack pair of IPs (ips='%s')",
-                sorted_ips,
-            )
-            raise DualStackNodeIPError(f"{sorted_ips} invalid length")
-        elif len(sorted_ips) == 2 and (sorted_ips[0].version != sorted_ips[1].version):
-            log.error(
-                "node-ips dual-stack pair of IPs must be different ip versions (ips='%s')",
-                sorted_ips,
-            )
-            raise DualStackNodeIPError(f"{sorted_ips} duplicate ip versions")
-        # Dual-stack addresses (one IPv6 and one IPv4 address) must not contain unspecified IPs
-        # https://github.com/kubernetes/kubernetes/blob/f6530285a85d6f4280711301613a7d3215a25818/staging/src/k8s.io/component-helpers/node/util/ips.go#L58
-        elif len(sorted_ips) == 2 and any(addr.is_unspecified for addr in sorted_ips):
-            log.error(
-                "dual-stack node-ips cannot include '0.0.0.0' or '::' (sorted_ips='%s')",
-                sorted_ips,
-            )
-            raise DualStackNodeIPError(f"{sorted_ips} contain unspecified IP")
-
-        return [str(addr) for addr in sorted_ips]
+        return [str(x) for x in sorted(uniq, key=lambda x: (x.version, x))]
 
 
 if __name__ == "__main__":  # pragma: nocover
