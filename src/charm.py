@@ -458,6 +458,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._check_core_services(
             [
                 "snap.kubelet.daemon.service",
+                "snap.kube-proxy.daemon.service",
             ]
         )
 
