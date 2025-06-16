@@ -137,7 +137,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
         sysctl = yaml.safe_load(self.model.config.get("sysctl"))
         kubernetes_snaps.configure_kernel_parameters(sysctl)
 
-    @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"), status.ReconcilerError)
+    @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _configure_kubelet(self, event):
         """Configure kubelet with the configuration parameters."""
         status.add(ops.MaintenanceStatus("Configuring kubelet"))
