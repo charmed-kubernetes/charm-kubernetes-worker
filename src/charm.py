@@ -435,6 +435,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             elif exec_main_status and exec_main_status != "0":
                 return True, f"{service} Non-zero exit: ExecMainStatus={exec_main_status}"
             elif n_restarts and n_restarts > 10:
+                subprocess.run(["systemctl", "restart", service])
                 return True, f"{service} is restarting repeatedly"
             return False, ""
         except subprocess.CalledProcessError as e:
