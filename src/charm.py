@@ -442,12 +442,13 @@ class KubernetesWorkerCharm(ops.CharmBase):
             return True, f"Failed to check {service} status: {e.output.decode('utf-8')}"
 
     def _check_core_services(self, services):
-        for service in services:
-            log.info(f"checking the status of {service}")
-            has_failed, reason = self._service_has_failed(service)
-            if has_failed:
-                status.add(ops.BlockedStatus(f"{service} has failed: {reason}"))
-                return
+        with status.context(self.unit):
+            for service in services:
+                log.info(f"checking the status of {service}")
+                has_failed, reason = self._service_has_failed(service)
+                if has_failed:
+                    status.add(ops.BlockedStatus(f"{service} has failed: {reason}"))
+                    return
 
     def update_status(self, _event):
         """Handle the update status hook event.
