@@ -6,13 +6,14 @@
 
 import logging
 import shlex
+import socket
 import subprocess
 from base64 import b64encode
 from pathlib import Path
-from socket import gethostname
 from subprocess import CalledProcessError
 
 import charms.contextual_status as status
+import charms.node_base.address as node_address
 import ops
 import yaml
 from charms import kubernetes_snaps
@@ -404,10 +405,16 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         status.add(ops.MaintenanceStatus("Requesting certificates"))
 
-        bind_addrs = kubernetes_snaps.get_bind_addresses()
         common_name = kubernetes_snaps.get_public_address()
-
-        sans = sorted(set([common_name, gethostname()] + bind_addrs))
+        sans = [
+            common_name,
+            "127.0.0.1",
+            socket.gethostname(),
+            socket.getfqdn(),
+            *node_address.by_relation(self, "kube-control", True),
+            *kubernetes_snaps.get_bind_addresses(),
+        ]
+        sans = sorted(set(sans))
 
         self.certificates.request_server_cert(cn=common_name, sans=sans)
         self.certificates.request_client_cert("system:kubelet")
