@@ -4,16 +4,17 @@
 
 """Charmed Machine Operator for Kubernetes Worker."""
 
-import ipaddress
 import logging
 import shlex
+import socket
 import subprocess
 from base64 import b64encode
 from pathlib import Path
-from socket import gethostname
 from subprocess import CalledProcessError
+from typing import List
 
 import charms.contextual_status as status
+import charms.node_base.address as node_address
 import ops
 import yaml
 from charms import kubernetes_snaps
@@ -153,7 +154,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
             extra_config=yaml.safe_load(self.model.config.get("kubelet-extra-config")),
             external_cloud_provider=self.external_cloud_provider,
             kubeconfig=str(KUBELET_KUBECONFIG_PATH),
-            node_ip=','.join(self._get_node_ip_addresses()),
+            node_ip=','.join(self._get_node_ips()),
             registry=self.kube_control.get_registry_location(),
             taints=None,
         )
@@ -404,10 +405,16 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         status.add(ops.MaintenanceStatus("Requesting certificates"))
 
-        bind_addrs = kubernetes_snaps.get_bind_addresses()
         common_name = kubernetes_snaps.get_public_address()
-
-        sans = sorted(set([common_name, gethostname()] + bind_addrs))
+        sans = [
+            common_name,
+            "127.0.0.1",
+            socket.gethostname(),
+            socket.getfqdn(),
+            *node_address.by_relation(self, "kube-control", True),
+            *kubernetes_snaps.get_bind_addresses(),
+        ]
+        sans = sorted(set(sans))
 
         self.certificates.request_server_cert(cn=common_name, sans=sans)
         self.certificates.request_client_cert("system:kubelet")
@@ -442,6 +449,10 @@ class KubernetesWorkerCharm(ops.CharmBase):
             return True, f"Failed to check {service} status: {e.output.decode('utf-8')}"
 
     def _check_core_services(self, services):
+        if not self.reconciler.stored.reconciled:
+            # Bail, the unit isn't reconciled
+            log.info("Skipping core services check: unit is not yet reconciled.")
+            return
         with status.context(self.unit):
             for service in services:
                 log.info(f"checking the status of {service}")
@@ -501,11 +512,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         else:
             self.unit.set_workload_version("")
 
-    def _get_node_ip_addresses(self) -> list[str]:
-        binding = self.model.get_binding("kube-control")
-        addresses = binding.network.ingress_addresses if binding else []
-        uniq = {ipaddress.ip_address(addr) for addr in addresses}
-        return [str(x) for x in sorted(uniq, key=lambda x: (x.version, x))]
+    def _get_node_ips(self) -> List[str]:
+        return node_address.by_relation_preferred(self, "kube-control", True)
 
 
 if __name__ == "__main__":  # pragma: nocover
