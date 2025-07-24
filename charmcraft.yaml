@@ -36,3 +36,4 @@ bases:
 parts:
   charm:
     build-packages: [git]
+    charm-binary-python-packages: [importlib-metadata]
