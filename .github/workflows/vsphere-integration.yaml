@@ -8,18 +8,22 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Check out code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v3
+      - name: Read charmcraft version file
+        id: charmcraft
+        run: echo "channel=$(cat .charmcraft-channel)" >> $GITHUB_OUTPUT
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: "3.8"
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
           provider: vsphere
-          juju-channel: 3.1/stable
+          juju-channel: 3/stable
           credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
           clouds-yaml: ${{ secrets.CLOUDS_YAML }}
+          charmcraft-channel: ${{ steps.charmcraft.outputs.channel }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
           bootstrap-options: >-
             ${{ secrets.JAMMY_BOOTSTRAP_OPTIONS }}
