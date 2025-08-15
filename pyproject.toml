@@ -17,6 +17,7 @@ target-version = ["py38"]
 # Linting tools configuration
 [tool.ruff]
 line-length = 99
+target-version = "py38"
 lint.select = ["E", "W", "F", "C", "N", "D", "I001"]
 lint.extend-ignore = [
     "D203",

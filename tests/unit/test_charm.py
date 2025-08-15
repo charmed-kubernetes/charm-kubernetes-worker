@@ -3,17 +3,19 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import logging
 from typing import Mapping, Tuple
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import ops
 import ops.testing
 import pytest
-from charm import KubernetesWorkerCharm
 from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_kubernetes_cni import KubernetesCniProvides
 from ops.interface_tls_certificates import CertificatesRequires
 from ops.testing import Harness
+
+from charm import KubernetesWorkerCharm
 
 ops.testing.SIMULATE_CAN_CONNECT = True
 
@@ -39,35 +41,45 @@ def test__check_kubecontrol_integration(
         assert result is result
 
 
-@pytest.mark.parametrize(
-    "registry,hash",
-    [
-        pytest.param(
-            "myregistry.com",
-            "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
-            id="Registry available",
-        ),
-        pytest.param(None, None, id="Integration not ready"),
-    ],
-)
 @pytest.mark.skip_configure_cni
-def test__configure_cni(
-    harness: Harness[KubernetesWorkerCharm],
-    charm_environment: CharmEnvironment,
-    registry: str,
-    hash: str,
+@patch("charms.interface_kubernetes_cni.hash_file")
+def test_configure_cni_registry(
+    mock_hash, charm_environment: CharmEnvironment, harness: Harness[KubernetesWorkerCharm]
 ):
     charm, _ = charm_environment
+    harness.disable_hooks()
+    mock_hash.return_value = hash = (
+        "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+    )
     with patch.object(charm.kube_control, "get_registry_location") as mock_get_registry:
-        with patch("charms.interface_kubernetes_cni.hash_file") as mock_hash:
-            cni_relation_id = harness.add_relation("cni", "calico")
-            mock_hash.return_value = hash
-            harness.add_relation_unit(cni_relation_id, "calico/0")
-            mock_get_registry.return_value = registry
-            charm._configure_cni()
-            relation_data = harness.get_relation_data(cni_relation_id, "kubernetes-worker/0")
-            assert relation_data.get("image-registry", None) == registry
-            assert relation_data.get("kubeconfig-hash") == hash
+        mock_get_registry.return_value = registry = "myregistry.com"
+        cni_relation_id = harness.add_relation("cni", "calico")
+        harness.add_relation_unit(cni_relation_id, "calico/0")
+        charm._configure_cni()
+        relation_data = harness.get_relation_data(cni_relation_id, "kubernetes-worker/0")
+        assert relation_data.get("image-registry", None) == registry
+        assert relation_data.get("kubeconfig-hash") == hash
+
+
+@pytest.mark.skip_configure_cni
+def test_configure_cni_registry_no_cni(
+    charm_environment: CharmEnvironment, harness: Harness[KubernetesWorkerCharm], caplog
+):
+    charm, mocks = charm_environment
+    harness.disable_hooks()
+    with pytest.raises(Exception) as ie:
+        charm._configure_cni()
+    assert ie.match("CNI relation not established")
+    mocks["kubernetes_snaps"].set_default_cni_conf_file.assert_not_called()
+
+    with patch.object(charm.kube_control, "get_registry_location") as mock_get_registry:
+        mock_get_registry.return_value = "myregistry.com"
+        harness.update_config({"ignore-missing-cni": True})
+        charm._configure_cni()
+        infos = [log[2] for log in caplog.record_tuples if log[1] == logging.INFO]
+        assert len(infos) == 1, "There should be only one info level log"
+        assert ["Ignoring missing CNI configuration as per user request."] == infos
+        mocks["kubernetes_snaps"].set_default_cni_conf_file.assert_called_once_with(None)
 
 
 @pytest.mark.parametrize(
