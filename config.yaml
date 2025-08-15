@@ -4,6 +4,12 @@ options:
     default: "1.31/stable"
     description: |
       Snap channel to install Kubernetes worker services from
+  ignore-missing-cni:
+    type: boolean
+    default: false
+    description: |
+      If ignore-missing-cni is set to true, the charm will not enter a blocked state if a CNI has not been configured/provided via relation.
+      If ignore-missing-cni is set to false, and a CNI has not been configured/provided via relation, then the charm will enter a blocked state with the message: "Missing CNI relation or config".
   ingress:
     type: boolean
     default: true
