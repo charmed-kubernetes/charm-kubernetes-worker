@@ -112,7 +112,7 @@ rules:
       - list
       - watch
   - apiGroups:
-      - "networking.k8s.io" # k8s 1.14+
+      - networking.k8s.io
     resources:
       - ingresses
     verbs:
@@ -127,13 +127,13 @@ rules:
       - create
       - patch
   - apiGroups:
-      - "networking.k8s.io" # k8s 1.14+
+      - networking.k8s.io
     resources:
       - ingresses/status
     verbs:
       - update
   - apiGroups:
-      - "networking.k8s.io" # k8s 1.14+
+      - networking.k8s.io
     resources:
       - ingressclasses
     verbs:
@@ -185,8 +185,7 @@ rules:
       - list
       - watch
   - apiGroups:
-      - extensions
-      - "networking.k8s.io" # k8s 1.14+
+      - networking.k8s.io
     resources:
       - ingresses
     verbs:
@@ -194,14 +193,13 @@ rules:
       - list
       - watch
   - apiGroups:
-      - extensions
-      - "networking.k8s.io" # k8s 1.14+
+      - networking.k8s.io
     resources:
       - ingresses/status
     verbs:
       - update
   - apiGroups:
-      - "networking.k8s.io" # k8s 1.14+
+      - networking.k8s.io
     resources:
       - ingressclasses
     verbs:
@@ -210,27 +208,20 @@ rules:
       - watch
   - apiGroups:
       - ""
-    resourceNames:
-      - ingress-controller-leader
-    resources:
-      - configmaps
-    verbs:
-      - get
-      - update
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    verbs:
-      - create
-  - apiGroups:
-      - ""
     resources:
       - events
     verbs:
       - create
       - patch
   - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - list
+      - watch
+      - get
+  - apiGroups:
       - coordination.k8s.io
     resources:
       - leases
@@ -244,7 +235,7 @@ rules:
     resources:
       - leases
     verbs:
-      - create 
+      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -318,11 +309,19 @@ spec:
       containers:
         - name: nginx-ingress-controller{{ juju_application }}
           image: {{ ingress_image }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                - /wait-shutdown
           args:
             - /nginx-ingress-controller
             - --configmap=$(POD_NAMESPACE)/nginx-configuration
             - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services
             - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
+            - --election-id=ingress-controller-leader
+            - --controller-class=k8s.io/ingress-nginx
+            - --ingress-class=nginx-ingress-controller
             - --annotations-prefix=nginx.ingress.kubernetes.io
             - --enable-ssl-chain-completion={{ ssl_chain_completion }}
             - --enable-ssl-passthrough={{ enable_ssl_passthrough }}
@@ -345,13 +344,18 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: LD_PRELOAD
+              value: /usr/local/lib/libmimalloc.so
           ports:
             - name: http
               containerPort: 80
+              protocol: TCP
             - name: https
               containerPort: 443
+              protocol: TCP
+
           livenessProbe:
-            failureThreshold: 3
+            failureThreshold: 5
             httpGet:
               path: /healthz
               port: 10254
@@ -366,6 +370,7 @@ spec:
               path: /healthz
               port: 10254
               scheme: HTTP
+            initialDelaySeconds: 10
             periodSeconds: 10
             successThreshold: 1
             timeoutSeconds: 1
