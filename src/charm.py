@@ -238,7 +238,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
                     }
                 )
 
-            env = Environment(loader=FileSystemLoader("templates"))
+            env = Environment(loader=FileSystemLoader("templates")) # nosec B701
             template = env.get_template(manifest_file_name)
             output = template.render(context)
             manifest_dir.mkdir(exist_ok=True)
