@@ -235,21 +235,27 @@ provides:
     scope: container
   cos-agent:
     interface: cos_agent
+    optional: true
   ingress-proxy:
     interface: http
+    optional: true
 requires:
   aws:
     interface: aws-integration
+    optional: true
   gcp:
     interface: gcp-integration
+    optional: true
   azure:
     interface: azure-integration
+    optional: true
   certificates:
     interface: tls-certificates
   kube-control:
     interface: kube-control
   tokens:
     interface: tokens
+    optional: true
 
 resources:
   cni-plugins:
