@@ -33,7 +33,6 @@ import actions.cis_benchmark
 import actions.upgrade
 from cloud_integration import CloudIntegration
 from cos_integration import COSIntegration
-from http_provides import HttpProvides
 from kubectl import kubectl
 
 log = logging.getLogger(__name__)
@@ -69,7 +68,6 @@ class KubernetesWorkerCharm(ops.CharmBase):
             ],
         )
         self.external_cloud_provider = ExternalCloudProvider(self, "kube-control")
-        self.ingress_proxy = HttpProvides(self, "ingress-proxy")
         self.kube_control = KubeControlRequirer(self)
         self.label_maker = LabelMaker(self, kubeconfig_path=ROOT_KUBECONFIG_PATH, timeout=30)
         self.cloud_integration = CloudIntegration(self)
@@ -189,72 +187,22 @@ class KubernetesWorkerCharm(ops.CharmBase):
         else:
             raise status.ReconcilerError("Failed to apply node labels")
 
-    @status.on_error(ops.WaitingStatus("Waiting to configure ingress controller"))
-    def _configure_nginx_ingress_controller(self):
-        """Configure nginx-ingress-controller."""
-        if not ROOT_KUBECONFIG_PATH.exists():
-            raise status.ReconcilerError("kubeconfig needed to configuring ingress controller")
+    def _cleanup_legacy_ingress(self):
+        """Remove nginx ingress DaemonSet if present from a pre-1.36 deployment.
 
-        status.add(ops.MaintenanceStatus("Configuring ingress"))
-
-        manifest_dir = CDK_DIR_PATH / "addons"
-        manifest_file_name = "ingress-daemon-set.yaml"
-        manifest_path = manifest_dir / manifest_file_name
-
-        if self.config["ingress"]:
-            image = self.config["nginx-image"]
-            if image == "" or image == "auto":
-                registry = self.kube_control.get_registry_location() or "registry.k8s.io"
-                image = f"{registry}/ingress-nginx/controller:v1.14.4"
-
-            context = {
-                "daemonset_api_version": "apps/v1",
-                "default_ssl_certificate_option": None,
-                "enable_ssl_passthrough": self.config["ingress-ssl-passthrough"],
-                "ingress_image": image,
-                "ingress_uid": "101",
-                "juju_application": self.app.name,
-                "ssl_chain_completion": self.config["ingress-ssl-chain-completion"],
-                "use_forwarded_headers": (
-                    "true" if self.config["ingress-use-forwarded-headers"] else "false"
-                ),
-                # NOTE(Hue): The default comes from https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#proxy-real-ip-cidr
-                "proxy_real_ip_cidr": self.config.get("ingress-proxy-real-ip-cidr", "0.0.0.0/0"),
-            }
-
-            ssl_cert = self.config["ingress-default-ssl-certificate"]
-            ssl_key = self.config["ingress-default-ssl-key"]
-            if ssl_cert and ssl_key:
-                default_cert_option = (
-                    "- --default-ssl-certificate=$(POD_NAMESPACE)/default-ssl-certificate"
-                )
-                context.update(
-                    {
-                        "default_ssl_certificate": b64encode(ssl_cert.encode("utf-8")).decode(
-                            "utf-8"
-                        ),
-                        "default_ssl_certificate_option": default_cert_option,
-                        "default_ssl_key": b64encode(ssl_key.encode("utf-8")).decode("utf-8"),
-                    }
-                )
-
-            env = Environment(loader=FileSystemLoader("templates"))
-            template = env.get_template(manifest_file_name)
-            output = template.render(context)
-            manifest_dir.mkdir(exist_ok=True)
-            with open(manifest_path, "w") as f:
-                f.write(output)
-            kubectl("apply", "-f", manifest_path)
-
-            self.unit.open_port("tcp", 80)
-            self.unit.open_port("tcp", 443)
-        else:
-            self.unit.close_port("tcp", 80)
-            self.unit.close_port("tcp", 443)
-
-            if manifest_path.exists():
-                kubectl("delete", "--ignore-not-found", "-f", manifest_path)
+        The nginx ingress controller was removed in 1.36. On upgrade, any existing
+        DaemonSet is deleted so it does not run as an unmanaged orphan.
+        """
+        manifest_path = CDK_DIR_PATH / "addons" / "ingress-daemon-set.yaml"
+        if manifest_path.exists():
+            try:
+                kubectl("delete", "--ignore-not-found", "-f", str(manifest_path))
                 manifest_path.unlink()
+                self.unit.close_port("tcp", 80)
+                self.unit.close_port("tcp", 443)
+            except Exception:
+                log.warning("Could not remove legacy ingress DaemonSet", exc_info=True)
+
 
     @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
     def _create_kubeconfigs(self, event):
@@ -391,9 +339,8 @@ class KubernetesWorkerCharm(ops.CharmBase):
         self._configure_kernel_parameters()
         self._configure_kubelet(event)
         self._configure_kubeproxy(event)
-        self._configure_nginx_ingress_controller()
+        self._cleanup_legacy_ingress()
         self._apply_node_labels()
-        self.ingress_proxy.configure(port=80)
         self.cloud_integration.integrate(event)
         self.update_status(event)
 
