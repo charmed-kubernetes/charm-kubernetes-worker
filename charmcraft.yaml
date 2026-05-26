@@ -36,23 +36,6 @@ config:
       description: |
         If ignore-missing-cni is set to true, the charm will not enter a blocked state if a CNI has not been configured/provided via relation.
         If ignore-missing-cni is set to false, and a CNI has not been configured/provided via relation, then the charm will enter a blocked state with the message: "Missing CNI relation or config".
-
-        If false, NGINX ignores incoming X-Forwarded-* headers, filling them with the
-        request information it sees. Use this option if NGINX is exposed directly to
-        the internet, or it's behind a L3/packet-based load balancer that doesn't alter
-        the source IP in the packets.
-
-        Reference: https://github.com/kubernetes/ingress-nginx/blob/a9c706be12a8be418c49ab1f60a02f52f9b14e55/docs/user-guide/nginx-configuration/configmap.md#use-forwarded-headers.
-        docs/user-guide/nginx-configuration/configmap.md#use-forwarded-headers.
-
-        By default NGINX uses the content of the header `X-Forwarded-For` as the source of truth
-        to get information about the client IP address. This works without issues in L7 if we
-        configure the setting `ingress-proxy-real-ip-cidr` with the correct information of the IP/network
-        address of trusted external load balancer.
-
-        References:
-          - https://kubernetes.github.io/ingress-nginx/user-guide/miscellaneous/#source-ip-address
-          - https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/#proxy-real-ip-cidr
     kubelet-extra-args:
       type: string
       default: ""
@@ -83,9 +66,6 @@ config:
       description: |
         Labels can be used to organize and to select subsets of nodes in the
         cluster. Declare node labels in key=value format, separated by spaces.
-
-        Example:
-          quay.io/kubernetes-ingress-controller/nginx-ingress-controller-amd64:0.32.0
     proxy-extra-args:
       type: string
       default: ""
