@@ -8,7 +8,6 @@ import logging
 import shlex
 import socket
 import subprocess
-from base64 import b64encode
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List
@@ -25,7 +24,6 @@ from charms.interface_kubernetes_cni import KubernetesCniProvides
 from charms.interface_tokens import TokensRequirer
 from charms.node_base import LabelMaker
 from charms.reconciler import Reconciler
-from jinja2 import Environment, FileSystemLoader
 from ops.interface_kube_control import KubeControlRequirer
 from ops.interface_tls_certificates import CertificatesRequires
 
