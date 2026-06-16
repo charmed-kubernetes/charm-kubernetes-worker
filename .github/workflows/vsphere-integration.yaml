@@ -30,6 +30,14 @@ jobs:
             --model-default datastore=vsanDatastore
             --model-default primary-network=VLAN_2763
             --model-default force-vm-hardware-version=17
+      - name: Configure LXD for charmcraft
+        run: |
+          # LXD 6.x requires security.nesting=true for snapd to run inside
+          # charmcraft's managed build containers. Also purge any containers
+          # cached from an older LXD version to avoid stale state.
+          sudo lxc profile set default security.nesting true
+          sudo lxc list --format csv -c n | grep charmcraft | \
+            xargs -I{} sudo lxc delete --force {} || true
       - name: Run test
         run: tox -e integration -- --basetemp=/home/ubuntu/pytest
       - name: Setup Debug Artifact Collection
