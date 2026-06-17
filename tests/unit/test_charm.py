@@ -262,3 +262,33 @@ def test__request_kubelet_and_proxy_credentials(charm_environment: CharmEnvironm
         mocks["kubernetes_snaps"].get_node_name.return_value = "foo"
         charm._request_kubelet_and_proxy_credentials()
         mock_set_auth.assert_called_with("system:node:foo")
+
+
+def test_cleanup_legacy_ingress_removes_manifest_and_closes_ports(
+    charm_environment: CharmEnvironment, tmp_path
+):
+    charm, _ = charm_environment
+    manifest_path = tmp_path / "addons" / "ingress-daemon-set.yaml"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("apiVersion: apps/v1\nkind: DaemonSet\n")
+
+    with patch("charm.CDK_DIR_PATH", tmp_path), patch("charm.kubectl") as mock_kubectl, patch.object(
+        charm.unit, "close_port"
+    ) as mock_close_port:
+        charm._cleanup_legacy_ingress()
+
+    mock_kubectl.assert_called_once_with("delete", "--ignore-not-found", "-f", str(manifest_path))
+    assert not manifest_path.exists()
+    mock_close_port.assert_has_calls([call("tcp", 80), call("tcp", 443)])
+
+
+def test_cleanup_legacy_ingress_noop_when_manifest_missing(charm_environment: CharmEnvironment, tmp_path):
+    charm, _ = charm_environment
+
+    with patch("charm.CDK_DIR_PATH", tmp_path), patch("charm.kubectl") as mock_kubectl, patch.object(
+        charm.unit, "close_port"
+    ) as mock_close_port:
+        charm._cleanup_legacy_ingress()
+
+    mock_kubectl.assert_not_called()
+    mock_close_port.assert_not_called()
