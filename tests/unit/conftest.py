@@ -21,6 +21,7 @@ MARKERS_AND_MOCKS = {
     "_configure_kubelet": "skip_configure_kubelet",
     "_configure_kubeproxy": "skip_configure_kubeproxy",
     "_install_cni_binaries": "skip_install_cni_binaries",
+    "_cleanup_legacy_ingress": "skip_cleanup_legacy_ingress",
 }
 
 

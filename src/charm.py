@@ -200,6 +200,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
                 self.unit.close_port("tcp", 443)
             except Exception:
                 log.warning("Could not remove legacy ingress DaemonSet", exc_info=True)
+                raise status.ReconcilerError("Could not remove legacy ingress DaemonSet")
 
 
     @status.on_error(ops.WaitingStatus("Waiting for kube-control relation"))
