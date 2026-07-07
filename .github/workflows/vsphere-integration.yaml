@@ -21,6 +21,7 @@ jobs:
         with:
           provider: vsphere
           juju-channel: 3/stable
+          lxd-channel: 5.21/stable
           credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
           clouds-yaml: ${{ secrets.CLOUDS_YAML }}
           charmcraft-channel: ${{ steps.charmcraft.outputs.channel }}
