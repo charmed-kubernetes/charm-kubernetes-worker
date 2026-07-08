@@ -4,12 +4,14 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import logging
+from pathlib import Path
 from typing import Mapping, Tuple
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import ops
 import ops.testing
 import pytest
+import yaml
 from charms.contextual_status import ReconcilerError
 from charms.interface_container_runtime import ContainerRuntimeProvides
 from charms.interface_kubernetes_cni import KubernetesCniProvides
@@ -262,3 +264,77 @@ def test__request_kubelet_and_proxy_credentials(charm_environment: CharmEnvironm
         mocks["kubernetes_snaps"].get_node_name.return_value = "foo"
         charm._request_kubelet_and_proxy_credentials()
         mock_set_auth.assert_called_with("system:node:foo")
+
+
+@pytest.mark.skip_cleanup_legacy_ingress
+def test__cleanup_legacy_ingress_removes_manifest_and_ports(
+    charm_environment: CharmEnvironment, tmp_path, monkeypatch
+):
+    charm, _ = charm_environment
+    addons_dir = tmp_path / "addons"
+    addons_dir.mkdir()
+    manifest = addons_dir / "ingress-daemon-set.yaml"
+    manifest.write_text("fake manifest")
+
+    monkeypatch.setattr("charm.CDK_DIR_PATH", tmp_path)
+
+    with patch("charm.kubectl") as mock_kubectl, patch.object(
+        charm.unit, "close_port"
+    ) as mock_close_port:
+        charm._cleanup_legacy_ingress()
+
+        mock_kubectl.assert_called_once_with("delete", "--ignore-not-found", "-f", str(manifest))
+        assert not manifest.exists()
+        mock_close_port.assert_has_calls([call("tcp", 80), call("tcp", 443)])
+
+
+@pytest.mark.skip_cleanup_legacy_ingress
+def test__cleanup_legacy_ingress_noop_when_manifest_missing(
+    charm_environment: CharmEnvironment, tmp_path, monkeypatch
+):
+    charm, _ = charm_environment
+    monkeypatch.setattr("charm.CDK_DIR_PATH", tmp_path)
+
+    with patch("charm.kubectl") as mock_kubectl, patch.object(
+        charm.unit, "close_port"
+    ) as mock_close_port:
+        charm._cleanup_legacy_ingress()
+
+        mock_kubectl.assert_not_called()
+        mock_close_port.assert_not_called()
+
+
+@pytest.mark.skip_cleanup_legacy_ingress
+def test__cleanup_legacy_ingress_raises_on_error(
+    charm_environment: CharmEnvironment, tmp_path, monkeypatch, caplog
+):
+    charm, _ = charm_environment
+    addons_dir = tmp_path / "addons"
+    addons_dir.mkdir()
+    manifest = addons_dir / "ingress-daemon-set.yaml"
+    manifest.write_text("fake manifest")
+
+    monkeypatch.setattr("charm.CDK_DIR_PATH", tmp_path)
+
+    with patch("charm.kubectl", side_effect=RuntimeError("kubectl failed")), patch.object(
+        charm.unit, "close_port"
+    ):
+        with pytest.raises(ReconcilerError):
+            charm._cleanup_legacy_ingress()
+
+    warnings = [log for log in caplog.record_tuples if log[1] == logging.WARNING]
+    assert any("Could not remove legacy ingress DaemonSet" in str(log[2]) for log in warnings)
+
+
+def test_charmcraft_yaml_has_no_ingress_config():
+    charmcraft = yaml.safe_load(Path("charmcraft.yaml").read_text())
+    options = charmcraft.get("config", {}).get("options", {})
+    ingress_keys = [k for k in options if k.startswith("ingress") or k == "nginx-image"]
+    assert not ingress_keys, f"Found ingress config options: {ingress_keys}"
+    provides = charmcraft.get("provides", {})
+    assert "ingress-proxy" not in provides, "ingress-proxy relation should be removed"
+
+
+def test_ingress_files_removed():
+    assert not Path("src/http_provides.py").exists(), "http_provides.py should have been removed"
+    assert not Path("templates/ingress-daemon-set.yaml").exists(), "ingress-daemon-set.yaml should have been removed"
