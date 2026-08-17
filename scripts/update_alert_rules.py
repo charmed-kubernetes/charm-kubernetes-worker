@@ -22,7 +22,7 @@ import yaml
 logging.basicConfig(level=logging.INFO)
 
 # NOTE: pick a kube-prometheus version that supports the Kubernetes version we deploy
-VERSION = "v0.13.0"
+VERSION = "v0.18.0"
 SOURCE = (
     f"https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/{VERSION}/manifests"
 )
@@ -122,8 +122,11 @@ def main():
         temp_path = Path(temp_dir)
         try:
             download_and_process_rule_files(temp_path)
-            shutil.rmtree(ALERT_RULES_DIR, ignore_errors=True)
-            ALERT_RULES_DIR.mkdir(parents=True)
+            ALERT_RULES_DIR.mkdir(parents=True, exist_ok=True)
+            # Only replace the files this script manages; the directory may
+            # also contain hand-written rules.
+            for rule_file in RULE_FILES:
+                (ALERT_RULES_DIR / rule_file).unlink(missing_ok=True)
             move_processed_files(temp_path)
             apply_patches()
         except Exception as e:
