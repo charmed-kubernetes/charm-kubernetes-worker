@@ -1,12 +1,16 @@
 diff --git a/src/prometheus_alert_rules/kubernetesControlPlane-prometheusRule.yaml b/src/prometheus_alert_rules/kubernetesControlPlane-prometheusRule.yaml
-index 0a7c375..72423b7 100644
+index 19f5e58..c491628 100644
 --- a/src/prometheus_alert_rules/kubernetesControlPlane-prometheusRule.yaml
 +++ b/src/prometheus_alert_rules/kubernetesControlPlane-prometheusRule.yaml
-@@ -11,7 +11,7 @@ groups:
-       description: Kubelet has disappeared from Prometheus target discovery.
+@@ -12,11 +12,7 @@ groups:
+         {{ $labels.cluster }}.
        runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeletdown
        summary: Target disappeared from Prometheus target discovery.
--    expr: 'absent(up{job="kubelet", metrics_path="/metrics"} == 1)
+-    expr: 'count by (cluster) (kube_node_info{job="kube-state-metrics"})
+-
+-      unless on (cluster)
+-
+-      count by (cluster) (up{job="kubelet", metrics_path="/metrics"} == 1)
 +    expr: 'up{job="kubelet", metrics_path="/metrics"} == 0
  
        '
