@@ -3,8 +3,11 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import itertools
+import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Mapping, Tuple
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
@@ -212,9 +215,7 @@ def test__create_kubeconfigs(charm_environment: CharmEnvironment):
         CertificatesRequires, "ca", new_callable=PropertyMock, return_value="test_ca"
     ), patch.object(
         charm.kube_control, "get_auth_credentials", return_value=auth_credentials
-    ), patch.object(
-        charm.kube_control, "get_api_endpoints", return_value=["10.0.0.10", "10.1.1.10"]
-    ):
+    ), patch.object(charm, "_get_api_endpoints", return_value=["10.0.0.10", "10.1.1.10"]):
         charm._create_kubeconfigs(mock_event)
 
         calls = [
@@ -249,6 +250,38 @@ def test__create_kubeconfigs(charm_environment: CharmEnvironment):
         ]
 
         mocks["kubernetes_snaps"].create_kubeconfig.assert_has_calls(calls)
+
+
+def test__get_api_endpoints_is_the_sorted_union_in_any_unit_order(
+    charm_environment: CharmEnvironment,
+):
+    """Each control-plane unit publishes its own endpoint; any unit order gives one answer."""
+    charm, _ = charm_environment
+    published = {
+        "kubernetes-control-plane/0": ["https://10.0.0.82:6443"],
+        "kubernetes-control-plane/1": ["https://10.0.0.85:6443"],
+        "kubernetes-control-plane/2": ["https://10.0.0.192:6443", "https://10.0.0.82:6443"],
+    }
+    data = {unit: {"api-endpoints": json.dumps(urls)} for unit, urls in published.items()}
+    expected = ["https://10.0.0.192:6443", "https://10.0.0.82:6443", "https://10.0.0.85:6443"]
+
+    for order in itertools.permutations(published):
+        relation = SimpleNamespace(units=list(order), data=data)
+        with patch.object(
+            type(charm.kube_control), "relation", new_callable=PropertyMock, return_value=relation
+        ):
+            assert charm._get_api_endpoints() == expected
+
+
+def test__get_api_endpoints_without_relation_or_data(charm_environment: CharmEnvironment):
+    charm, _ = charm_environment
+    unit = "kubernetes-control-plane/0"
+    no_data = SimpleNamespace(units=[unit], data={unit: {}})
+    for relation in (None, SimpleNamespace(units=[], data={}), no_data):
+        with patch.object(
+            type(charm.kube_control), "relation", new_callable=PropertyMock, return_value=relation
+        ):
+            assert charm._get_api_endpoints() == []
 
 
 def test__get_unit_number(charm_environment: CharmEnvironment):

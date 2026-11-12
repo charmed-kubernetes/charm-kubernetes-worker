@@ -4,6 +4,7 @@
 
 """Charmed Machine Operator for Kubernetes Worker."""
 
+import json
 import logging
 import shlex
 import socket
@@ -213,7 +214,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         node_user = f"system:node:{self.get_node_name()}"
         credentials = self.kube_control.get_auth_credentials(node_user)
-        servers = self.kube_control.get_api_endpoints()
+        servers = self._get_api_endpoints()
         if not credentials:
             raise status.ReconcilerError("Credentials not ready")
         if not servers:
@@ -272,6 +273,21 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
+
+    def _get_api_endpoints(self) -> List[str]:
+        """Return the API endpoints of every control-plane unit, sorted.
+
+        Each control-plane unit publishes its own endpoint. The interface library
+        merges the units' data with `dict.update` over an unordered set of units, so
+        `get_api_endpoints()` returns only one unit's endpoint, a different one on
+        different hooks. That would rewrite the kubeconfigs, and restart kubelet and
+        kube-proxy, on most hooks.
+        """
+        relation = self.kube_control.relation
+        endpoints = set()
+        for unit in relation.units if relation else ():
+            endpoints.update(json.loads(relation.data[unit].get("api-endpoints", "[]")))
+        return sorted(endpoints)
 
     @status.on_error(ops.WaitingStatus("Waiting for cluster name"))
     def get_cluster_name(self) -> str:
