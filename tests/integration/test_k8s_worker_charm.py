@@ -89,6 +89,13 @@ async def get_nodes(k8s):
     return node_list["items"]
 
 
+def _node_is_ready(node) -> bool:
+    return any(
+        c.get("type") == "Ready" and c.get("status") == "True"
+        for c in node.get("status", {}).get("conditions", [])
+    )
+
+
 async def test_nodes_labelled_restarts_no_worker_service(request, ops_test):
     """Test node labelling and that hooks changing no service inputs restart nothing."""
     testname: str = request.node.name
@@ -104,7 +111,7 @@ async def test_nodes_labelled_restarts_no_worker_service(request, ops_test):
     await settle(ops_test, timeout=10 * 60)
 
     try:
-        nodes = await get_nodes(kcp.units[0])
+        nodes = [n for n in await get_nodes(kcp.units[0]) if _node_is_ready(n)]
         labelled = [n for n in nodes if testname in n["metadata"]["labels"]]
         juju_nodes = [n for n in nodes if juju_charm_label in n["metadata"]["labels"]]
         assert len(kcp.units + worker.units) == len(
@@ -119,7 +126,7 @@ async def test_nodes_labelled_restarts_no_worker_service(request, ops_test):
         )
 
     await settle(ops_test, timeout=10 * 60)
-    nodes = await get_nodes(kcp.units[0])
+    nodes = [n for n in await get_nodes(kcp.units[0]) if _node_is_ready(n)]
     labelled = [n for n in nodes if testname in n["metadata"]["labels"]]
     assert 0 == len(labelled), f"No nodes should have custom labels, found {len(labelled)}"
 
@@ -138,7 +145,7 @@ async def test_proxy_arg_change_restarts_only_kube_proxy(ops_test: OpsTest):
     worker = ops_test.model.applications[WORKER_APP]
     before = await invocation_ids(ops_test)
 
-    await worker.set_config({"proxy-extra-args": "v=2"})
+    await worker.set_config({"proxy-extra-args": "v=3"})
     await settle(ops_test)
     after = await invocation_ids(ops_test)
 
@@ -155,7 +162,7 @@ async def test_kubelet_arg_change_restarts_only_kubelet(ops_test: OpsTest):
     worker = ops_test.model.applications[WORKER_APP]
     before = await invocation_ids(ops_test)
 
-    await worker.set_config({"kubelet-extra-args": "v=2"})
+    await worker.set_config({"kubelet-extra-args": "v=3"})
     await settle(ops_test)
     after = await invocation_ids(ops_test)
 

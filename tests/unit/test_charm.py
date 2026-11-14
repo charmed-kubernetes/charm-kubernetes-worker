@@ -371,3 +371,37 @@ def test_charmcraft_yaml_has_no_ingress_config():
 def test_ingress_files_removed():
     assert not Path("src/http_provides.py").exists(), "http_provides.py should have been removed"
     assert not Path("templates/ingress-daemon-set.yaml").exists(), "ingress-daemon-set.yaml should have been removed"
+
+
+def test_service_has_failed_ignores_lifetime_restarts_when_active_running(
+    charm_environment: CharmEnvironment,
+):
+    charm, _ = charm_environment
+    running_output = (
+        b"ActiveState=active\nSubState=running\nResult=success\n"
+        b"ExecMainStatus=0\nNRestarts=12\n"
+    )
+    transient_backoff_output = (
+        b"ActiveState=activating\nSubState=auto-restart\nResult=exit-code\n"
+        b"ExecMainStatus=1\nNRestarts=2\n"
+    )
+    crashloop_output = (
+        b"ActiveState=activating\nSubState=auto-restart\nResult=success\n"
+        b"ExecMainStatus=0\nNRestarts=12\n"
+    )
+    with patch("subprocess.check_output", return_value=running_output), patch(
+        "subprocess.run"
+    ) as mock_run:
+        assert charm._service_has_failed("snap.kubelet.daemon.service") == (False, "")
+        mock_run.assert_not_called()
+
+    with patch("subprocess.check_output", return_value=transient_backoff_output):
+        assert charm._service_has_failed("snap.kubelet.daemon.service") == (False, "")
+
+    with patch("subprocess.check_output", return_value=crashloop_output), patch(
+        "subprocess.run"
+    ) as mock_run:
+        failed, reason = charm._service_has_failed("snap.kubelet.daemon.service")
+        assert failed is True
+        assert "restarting repeatedly" in reason
+        mock_run.assert_called_once()

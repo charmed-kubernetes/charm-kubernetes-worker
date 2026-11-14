@@ -15,8 +15,8 @@ WORKER_SERVICES = [
 ]
 
 _NO_CHANGE = re.compile(
-    r"^unit-(?P<unit>\S+)-(?P<num>\d+): (?P<time>\d\d:\d\d:\d\d) INFO \S+ "
-    r"(?P<service>\S+): no change$"
+    r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) INFO \S+ \S+ "
+    r"(?:\S+: )?(?P<service>snap\.\S+\.daemon): no change$"
 )
 
 
@@ -60,32 +60,35 @@ def restarted_services(before, after):
 
 
 async def settle(ops_test, timeout=30 * 60, idle_period=15):
-    """Wait until every application is active and idle for `idle_period` seconds."""
-    await ops_test.model.wait_for_idle(status="active", timeout=timeout, idle_period=idle_period)
+    """Wait until every core application is active and idle for `idle_period` seconds."""
+    apps = set(ops_test.model.applications) - {"opentelemetry-collector"}
+    await ops_test.model.wait_for_idle(
+        apps=apps, status="active", timeout=timeout, idle_period=idle_period
+    )
 
 
 def utc_now():
-    return datetime.now(timezone.utc).strftime("%H:%M:%S")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 async def no_change_counts(ops_test, since):
-    """Count the "<service>: no change" INFO lines logged since `since` (HH:MM:SS UTC)."""
-    rc, out, err = await ops_test.run(
-        "juju",
-        "debug-log",
-        "-m",
-        ops_test.model_full_name,
-        "--replay",
-        "--no-tail",
-        "--utc",
-        "--level",
-        "INFO",
+    """Count the `<service>: no change` INFO lines logged since `since` (UTC)."""
+    units = units_of(ops_test, WORKER_APP)
+    outputs = await asyncio.gather(
+        *(
+            run_on_unit(
+                ops_test,
+                u,
+                f"grep ' INFO ' /var/log/juju/unit-{u.replace('/', '-')}.log || true",
+            )
+            for u in units
+        )
     )
-    assert rc == 0, err
     counts = {}
-    for line in out.splitlines():
-        m = _NO_CHANGE.match(line)
-        if m and m["time"] >= since:
-            key = (f"{m['unit']}/{m['num']}", m["service"])
-            counts[key] = counts.get(key, 0) + 1
+    for unit, out in zip(units, outputs):
+        for line in out.splitlines():
+            m = _NO_CHANGE.match(line)
+            if m and m["ts"] >= since:
+                key = (unit, m["service"])
+                counts[key] = counts.get(key, 0) + 1
     return counts
