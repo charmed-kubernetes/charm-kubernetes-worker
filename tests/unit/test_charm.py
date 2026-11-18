@@ -3,8 +3,11 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import itertools
+import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Mapping, Tuple
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
@@ -212,9 +215,7 @@ def test__create_kubeconfigs(charm_environment: CharmEnvironment):
         CertificatesRequires, "ca", new_callable=PropertyMock, return_value="test_ca"
     ), patch.object(
         charm.kube_control, "get_auth_credentials", return_value=auth_credentials
-    ), patch.object(
-        charm.kube_control, "get_api_endpoints", return_value=["10.0.0.10", "10.1.1.10"]
-    ):
+    ), patch.object(charm, "_get_api_endpoints", return_value=["10.0.0.10", "10.1.1.10"]):
         charm._create_kubeconfigs(mock_event)
 
         calls = [
@@ -249,6 +250,38 @@ def test__create_kubeconfigs(charm_environment: CharmEnvironment):
         ]
 
         mocks["kubernetes_snaps"].create_kubeconfig.assert_has_calls(calls)
+
+
+def test__get_api_endpoints_is_the_sorted_union_in_any_unit_order(
+    charm_environment: CharmEnvironment,
+):
+    """Each control-plane unit publishes its own endpoint; any unit order gives one answer."""
+    charm, _ = charm_environment
+    published = {
+        "kubernetes-control-plane/0": ["https://10.0.0.82:6443"],
+        "kubernetes-control-plane/1": ["https://10.0.0.85:6443"],
+        "kubernetes-control-plane/2": ["https://10.0.0.192:6443", "https://10.0.0.82:6443"],
+    }
+    data = {unit: {"api-endpoints": json.dumps(urls)} for unit, urls in published.items()}
+    expected = ["https://10.0.0.192:6443", "https://10.0.0.82:6443", "https://10.0.0.85:6443"]
+
+    for order in itertools.permutations(published):
+        relation = SimpleNamespace(units=list(order), data=data)
+        with patch.object(
+            type(charm.kube_control), "relation", new_callable=PropertyMock, return_value=relation
+        ):
+            assert charm._get_api_endpoints() == expected
+
+
+def test__get_api_endpoints_without_relation_or_data(charm_environment: CharmEnvironment):
+    charm, _ = charm_environment
+    unit = "kubernetes-control-plane/0"
+    no_data = SimpleNamespace(units=[unit], data={unit: {}})
+    for relation in (None, SimpleNamespace(units=[], data={}), no_data):
+        with patch.object(
+            type(charm.kube_control), "relation", new_callable=PropertyMock, return_value=relation
+        ):
+            assert charm._get_api_endpoints() == []
 
 
 def test__get_unit_number(charm_environment: CharmEnvironment):
@@ -338,3 +371,37 @@ def test_charmcraft_yaml_has_no_ingress_config():
 def test_ingress_files_removed():
     assert not Path("src/http_provides.py").exists(), "http_provides.py should have been removed"
     assert not Path("templates/ingress-daemon-set.yaml").exists(), "ingress-daemon-set.yaml should have been removed"
+
+
+def test_service_has_failed_ignores_lifetime_restarts_when_active_running(
+    charm_environment: CharmEnvironment,
+):
+    charm, _ = charm_environment
+    running_output = (
+        b"ActiveState=active\nSubState=running\nResult=success\n"
+        b"ExecMainStatus=0\nNRestarts=12\n"
+    )
+    transient_backoff_output = (
+        b"ActiveState=activating\nSubState=auto-restart\nResult=exit-code\n"
+        b"ExecMainStatus=1\nNRestarts=2\n"
+    )
+    crashloop_output = (
+        b"ActiveState=activating\nSubState=auto-restart\nResult=success\n"
+        b"ExecMainStatus=0\nNRestarts=12\n"
+    )
+    with patch("subprocess.check_output", return_value=running_output), patch(
+        "subprocess.run"
+    ) as mock_run:
+        assert charm._service_has_failed("snap.kubelet.daemon.service") == (False, "")
+        mock_run.assert_not_called()
+
+    with patch("subprocess.check_output", return_value=transient_backoff_output):
+        assert charm._service_has_failed("snap.kubelet.daemon.service") == (False, "")
+
+    with patch("subprocess.check_output", return_value=crashloop_output), patch(
+        "subprocess.run"
+    ) as mock_run:
+        failed, reason = charm._service_has_failed("snap.kubelet.daemon.service")
+        assert failed is True
+        assert "restarting repeatedly" in reason
+        mock_run.assert_called_once()
