@@ -141,7 +141,9 @@ actions:
           the default branch of the upstream repository:
             https://github.com/aquasecurity/kube-bench
   upgrade:
-    description: Upgrade the Kubernetes snaps
+    description: >-
+      Upgrade the Kubernetes snaps to the latest revision in the configured
+      channel, applying a minor-version change. Run it on one unit at a time.
 
 peers:
   coordinator:

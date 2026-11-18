@@ -4,6 +4,7 @@
 
 """Charmed Machine Operator for Kubernetes Worker."""
 
+import json
 import logging
 import shlex
 import socket
@@ -213,7 +214,7 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
         node_user = f"system:node:{self.get_node_name()}"
         credentials = self.kube_control.get_auth_credentials(node_user)
-        servers = self.kube_control.get_api_endpoints()
+        servers = self._get_api_endpoints()
         if not credentials:
             raise status.ReconcilerError("Credentials not ready")
         if not servers:
@@ -272,6 +273,21 @@ class KubernetesWorkerCharm(ops.CharmBase):
 
     def _get_unit_number(self) -> int:
         return int(self.unit.name.split("/")[1])
+
+    def _get_api_endpoints(self) -> List[str]:
+        """Return the API endpoints of every control-plane unit, sorted.
+
+        Each control-plane unit publishes its own endpoint. The interface library
+        merges the units' data with `dict.update` over an unordered set of units, so
+        `get_api_endpoints()` returns only one unit's endpoint, a different one on
+        different hooks. That would rewrite the kubeconfigs, and restart kubelet and
+        kube-proxy, on most hooks.
+        """
+        relation = self.kube_control.relation
+        endpoints = set()
+        for unit in relation.units if relation else ():
+            endpoints.update(json.loads(relation.data[unit].get("api-endpoints", "[]")))
+        return sorted(endpoints)
 
     @status.on_error(ops.WaitingStatus("Waiting for cluster name"))
     def get_cluster_name(self) -> str:
@@ -376,20 +392,25 @@ class KubernetesWorkerCharm(ops.CharmBase):
             )
 
             active_state = fields.get("ActiveState")
+            sub_state = fields.get("SubState")
             result = fields.get("Result")
             exec_main_status = fields.get("ExecMainStatus")
             n_restarts = int(fields.get("NRestarts") or -1)
 
+            if active_state == "active" and sub_state == "running":
+                return False, ""
+            if n_restarts > 10:
+                subprocess.run(["systemctl", "restart", service])
+                return True, f"{service} is restarting repeatedly"
+            if active_state == "activating" and sub_state == "auto-restart":
+                return False, ""
             if active_state == "failed" or result == "exit-code":
                 return (
                     True,
                     f"{service} has failed: ActiveState={active_state}, Result={result}",
                 )
-            elif exec_main_status and exec_main_status != "0":
+            if exec_main_status and exec_main_status != "0":
                 return True, f"{service} Non-zero exit: ExecMainStatus={exec_main_status}"
-            elif n_restarts and n_restarts > 10:
-                subprocess.run(["systemctl", "restart", service])
-                return True, f"{service} is restarting repeatedly"
             return False, ""
         except subprocess.CalledProcessError as e:
             return True, f"Failed to check {service} status: {e.output.decode('utf-8')}"
